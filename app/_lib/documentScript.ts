@@ -224,14 +224,64 @@ export const DOCUMENT_SCRIPT = String.raw`
       }
     });
 
-    /* 목차 클릭 시 모바일 메뉴 닫기 (스크롤은 CSS smooth + 네이티브 해시 이동) */
+    /* 목차 클릭 시 모바일 메뉴 닫기 + 부드러운 스크롤 (상위 창 이동 방지) */
     sidebar.addEventListener("click", function (e) {
       var target = e.target;
       while (target && target !== sidebar && target.tagName !== "A") target = target.parentNode;
-      if (target && target.tagName === "A") setOpen(false);
+      if (target && target.tagName === "A") {
+        var href = target.getAttribute("href");
+        if (href && href.charAt(0) === "#") {
+          e.preventDefault();
+          e.stopPropagation();
+          var id = decodeURIComponent(href.slice(1));
+          var elem = id ? doc.getElementById(id) : null;
+          if (elem) {
+            elem.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
+        setOpen(false);
+      }
     });
 
     initActiveHeading(links, order);
+  }
+
+  /* ---------------- 텍스트 선택 (AI 질문 툴팁용) ---------------- */
+  function initSelectionHandler() {
+    function notifySelection() {
+      var sel = window.getSelection ? window.getSelection() : null;
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        window.parent.postMessage({ type: "md2notion:selection", text: "" }, "*");
+        return;
+      }
+      var text = sel.toString().trim();
+      if (text.length > 0) {
+        var range = sel.getRangeAt(0);
+        var rect = range.getBoundingClientRect();
+        window.parent.postMessage({
+          type: "md2notion:selection",
+          text: text,
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            bottom: rect.bottom,
+            right: rect.right,
+            width: rect.width,
+            height: rect.height
+          }
+        }, "*");
+      }
+    }
+
+    doc.addEventListener("mouseup", function () {
+      setTimeout(notifySelection, 10);
+    });
+
+    doc.addEventListener("selectionchange", function () {
+      if (!window.getSelection || window.getSelection().isCollapsed) {
+        window.parent.postMessage({ type: "md2notion:selection", text: "" }, "*");
+      }
+    });
   }
 
   /* ---------------- 인쇄 ---------------- */
@@ -244,11 +294,73 @@ export const DOCUMENT_SCRIPT = String.raw`
     });
   }
 
+  /* ---------------- 실시간 설정 업데이트 (iframe 깜빡임 방지) ---------------- */
+  function initLiveSettingsUpdate() {
+    window.addEventListener("message", function (e) {
+      if (!e || !e.data || e.data.type !== "md2notion:updateSettings") return;
+      var s = e.data.settings;
+      if (!s) return;
+
+      if (s.docTitle !== undefined) {
+        var sTitle = doc.querySelector(".doc-sidebar-title");
+        if (sTitle) sTitle.textContent = s.docTitle;
+        var tTitle = doc.querySelector(".doc-topbar-title");
+        if (tTitle) tTitle.textContent = s.docTitle;
+        doc.title = s.docTitle;
+      }
+
+      if (s.maxWidth !== undefined) {
+        doc.documentElement.style.setProperty("--doc-max-width", s.maxWidth + "px");
+      }
+
+      if (s.fontSize !== undefined) {
+        doc.documentElement.style.setProperty("--doc-font-size", s.fontSize + "px");
+      }
+
+      if (s.showToc !== undefined) {
+        doc.body.classList.toggle("no-toc", !s.showToc);
+      }
+
+      if (s.showProgress !== undefined) {
+        doc.body.classList.toggle("no-progress", !s.showProgress);
+      }
+
+      if (s.showPrintButton !== undefined) {
+        doc.body.classList.toggle("no-print-btn", !s.showPrintButton);
+      }
+    });
+  }
+
+  /* ---------------- 모든 내장 앵커 링크 (#) 스크롤 처리 ---------------- */
+  function initAnchorNavigation() {
+    doc.addEventListener("click", function (e) {
+      var target = e.target;
+      while (target && target !== doc.body && target.tagName !== "A") {
+        target = target.parentNode;
+      }
+      if (!target || target.tagName !== "A") return;
+
+      var href = target.getAttribute("href");
+      if (href && href.charAt(0) === "#") {
+        e.preventDefault();
+        e.stopPropagation();
+        var id = decodeURIComponent(href.slice(1));
+        var elem = id ? doc.getElementById(id) : null;
+        if (elem) {
+          elem.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    });
+  }
+
   function boot() {
     initCopyButtons();
     initProgress();
     initToc();
     initPrint();
+    initSelectionHandler();
+    initLiveSettingsUpdate();
+    initAnchorNavigation();
   }
 
   if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", boot);

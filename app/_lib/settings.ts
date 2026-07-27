@@ -1,6 +1,6 @@
 export const TOC_DEPTHS = [1, 2, 3, 4] as const;
-export const MAX_WIDTHS = [720, 800, 900, 1000] as const;
-export const FONT_SIZES = [15, 16, 17, 18] as const;
+export const MAX_WIDTHS = [720, 800, 900, 1000, 1200] as const;
+export const FONT_SIZES = [14, 15, 16, 17, 18, 20] as const;
 
 export type TocDepth = (typeof TOC_DEPTHS)[number];
 export type MaxWidth = (typeof MAX_WIDTHS)[number];

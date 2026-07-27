@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FileDropzone from "./FileDropzone";
 import MarkdownSource from "./MarkdownSource";
 import Preview from "./Preview";
-import SettingsPanel from "./SettingsPanel";
 import Toolbar, { type ViewMode } from "./Toolbar";
 import { CloseIcon } from "./icons";
 import { convertMarkdown, type TocItem } from "../_lib/markdown";
@@ -19,6 +18,9 @@ import {
   type AppearanceSettings,
   type Settings,
 } from "../_lib/settings";
+import SelectionTooltip from "./SelectionTooltip";
+import AiAssistantPanel from "./AiAssistantPanel";
+import { insertSummaryIntoMarkdown } from "../_lib/aiAssistant";
 
 interface Rendered {
   bodyHtml: string;
@@ -37,13 +39,56 @@ export default function ConverterApp() {
   /** 사용자가 문서 제목을 직접 고쳤을 때만 값이 들어간다. null 이면 H1 에서 자동으로 가져온다. */
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<AppearanceSettings>(loadAppearance);
-  const [view, setView] = useState<ViewMode>("split");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<ViewMode>("preview");
   const [fullscreen, setFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dropping, setDropping] = useState(false);
+
+  /* AI 문맥 질문 / 보충 관련 상태 */
+  const [selectionText, setSelectionText] = useState<string | null>(null);
+  const [selectionRect, setSelectionRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+
+  const handleSelectText = useCallback(
+    (text: string, rect: { top: number; left: number; width: number; height: number } | null) => {
+      if (aiPanelOpen) return;
+      if (!text || !rect) {
+        setSelectionText(null);
+        setSelectionRect(null);
+        return;
+      }
+      setSelectionText(text);
+      setSelectionRect(rect);
+    },
+    [aiPanelOpen],
+  );
+
+  const handleAddToDocument = useCallback(
+    (selected: string, summaryContent: string) => {
+      if (markdown === null) return;
+      const updated = insertSummaryIntoMarkdown(markdown, selected, summaryContent);
+      setMarkdown(updated);
+      setDebounced(updated);
+      setNotice(`'${selected.slice(0, 12)}...' 대화 내용이 문서에 정리되어 반영되었습니다.`);
+      setAiPanelOpen(false);
+      setSelectionText(null);
+      setSelectionRect(null);
+    },
+    [markdown],
+  );
+
+  const handleCloseAiPanel = useCallback(() => {
+    setAiPanelOpen(false);
+    setSelectionText(null);
+    setSelectionRect(null);
+  }, []);
 
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,6 +160,7 @@ export default function ConverterApp() {
     setMarkdown(text);
     setDebounced(text);
     setFileName(name);
+    setView("preview");
     setError(null);
   }, []);
 
@@ -256,10 +302,12 @@ export default function ConverterApp() {
     >
       <Toolbar
         fileName={fileName}
+        docTitle={docTitle}
+        settings={settings}
+        headingCount={rendered?.toc.length ?? 0}
         view={view}
-        settingsOpen={settingsOpen}
         onChangeView={setView}
-        onToggleSettings={() => setSettingsOpen((open) => !open)}
+        onChangeSetting={updateSetting}
         onOpenFile={() => fileInputRef.current?.click()}
         onDownload={handleDownload}
         onFullscreen={() => setFullscreen(true)}
@@ -281,49 +329,6 @@ export default function ConverterApp() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <aside
-          id="settings-panel"
-          className="hidden w-[272px] shrink-0 border-r border-stone-200 bg-white lg:block"
-          aria-label="변환 설정"
-        >
-          <SettingsPanel
-            settings={settings}
-            onChange={updateSetting}
-            headingCount={rendered?.toc.length ?? 0}
-          />
-        </aside>
-
-        {settingsOpen ? (
-          <div className="fixed inset-0 z-40 lg:hidden">
-            <button
-              type="button"
-              aria-label="설정 패널 닫기"
-              className="absolute inset-0 bg-stone-900/30"
-              onClick={() => setSettingsOpen(false)}
-            />
-            <div className="absolute inset-y-0 left-0 flex w-[min(88vw,300px)] flex-col bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2">
-                <span className="text-[13px] font-medium text-stone-700">변환 설정</span>
-                <button
-                  type="button"
-                  onClick={() => setSettingsOpen(false)}
-                  aria-label="설정 패널 닫기"
-                  className="rounded p-1 text-stone-500 hover:bg-stone-100"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-              <div className="min-h-0 flex-1">
-                <SettingsPanel
-                  settings={settings}
-                  onChange={updateSetting}
-                  headingCount={rendered?.toc.length ?? 0}
-                />
-              </div>
-            </div>
-          </div>
-        ) : null}
-
         <main className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
           {showSource ? (
             <section
@@ -333,13 +338,23 @@ export default function ConverterApp() {
                   : "flex-1"
               }`}
             >
-              <MarkdownSource value={markdown} onChange={setMarkdown} />
+              <MarkdownSource
+                value={markdown}
+                onChange={setMarkdown}
+                onSelectText={handleSelectText}
+              />
             </section>
           ) : null}
 
           {showPreview ? (
             <section className="min-h-0 min-w-0 flex-1 bg-white">
-              <Preview ref={previewRef} html={fullHtml} title={docTitle || fileName} />
+              <Preview
+                ref={previewRef}
+                html={fullHtml}
+                settings={settings}
+                title={docTitle || fileName}
+                onSelectText={handleSelectText}
+              />
             </section>
           ) : null}
         </main>
@@ -361,7 +376,13 @@ export default function ConverterApp() {
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            <Preview ref={fullscreenRef} html={fullHtml} title={docTitle || fileName} />
+            <Preview
+              ref={fullscreenRef}
+              html={fullHtml}
+              settings={settings}
+              title={docTitle || fileName}
+              onSelectText={handleSelectText}
+            />
           </div>
         </div>
       ) : null}
@@ -372,6 +393,19 @@ export default function ConverterApp() {
             새 Markdown 파일을 놓으면 열립니다
           </p>
         </div>
+      ) : null}
+
+      {/* AI 질문 툴팁 & 대화 패널 */}
+      {selectionRect && selectionText && !aiPanelOpen ? (
+        <SelectionTooltip rect={selectionRect} onAsk={() => setAiPanelOpen(true)} />
+      ) : null}
+
+      {aiPanelOpen && selectionText ? (
+        <AiAssistantPanel
+          selectedText={selectionText}
+          onAddToDocument={handleAddToDocument}
+          onClose={handleCloseAiPanel}
+        />
       ) : null}
 
       <div

@@ -101,3 +101,35 @@ export const EditIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const ChevronDownIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Svg>
+);
+
+export const WidthIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 12h16" />
+    <path d="m7 9-3 3 3 3" />
+    <path d="m17 9 3 3-3 3" />
+  </Svg>
+);
+
+export const TextSizeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 19V6.5a2.5 2.5 0 0 1 5 0V19" />
+    <path d="M4 13h5" />
+    <path d="M14 19v-8a2 2 0 0 1 4 0v8" />
+    <path d="M14 15h4" />
+  </Svg>
+);
+
+export const TocIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 6h18" />
+    <path d="M7 12h14" />
+    <path d="M11 18h10" />
+  </Svg>
+);
+
+
