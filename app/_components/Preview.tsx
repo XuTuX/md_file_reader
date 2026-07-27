@@ -57,6 +57,8 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
    * 마크다운 본문 변경 시에만 srcDoc 을 갱신하고,
    * 순수 설정/제목 변경 시에는 postMessage 가 처리하므로 srcDoc 재초기화(깜빡임)를 스킵합니다.
    */
+  const lastHtmlRef = useRef(html);
+
   useEffect(() => {
     const settingsChanged =
       lastSettingsRef.current &&
@@ -69,9 +71,11 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
         lastSettingsRef.current.showPrintButton !== settings.showPrintButton);
 
     lastSettingsRef.current = settings;
+    const htmlChanged = lastHtmlRef.current !== html;
+    lastHtmlRef.current = html;
 
     // 순수 설정 변경인 경우 srcDoc 을 갱신하여 iframe 을 재로드하지 않는다 (깜빡임 완전 제거)
-    if (settingsChanged && iframeRef.current?.contentWindow) {
+    if (settingsChanged && !htmlChanged && iframeRef.current?.contentWindow) {
       return;
     }
 

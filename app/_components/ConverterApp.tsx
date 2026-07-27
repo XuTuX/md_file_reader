@@ -32,6 +32,79 @@ function baseName(fileName: string): string {
   return fileName.replace(/\.(md|markdown)$/i, "");
 }
 
+/** 마크다운 원문 텍스트에서 특정 제목(headingText)을 가진 행 번호(0-indexed)를 찾는다 (H1~H6 전체 지원) */
+function findHeadingLineIndex(markdownText: string, targetText: string): number {
+  if (!markdownText || !targetText) return -1;
+  const lines = markdownText.split("\n");
+  const normalizedTarget = targetText.trim().toLowerCase().replace(/[`*_~]/g, "");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^#{1,6}\s+/.test(line)) {
+      const lineText = line
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/[`*_~]/g, "")
+        .trim()
+        .toLowerCase();
+      if (lineText === normalizedTarget) return i;
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^#{1,6}\s+/.test(line)) {
+      const lineText = line
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/[`*_~]/g, "")
+        .trim()
+        .toLowerCase();
+      if (lineText.includes(normalizedTarget) || normalizedTarget.includes(lineText)) return i;
+    }
+  }
+
+  return -1;
+}
+
+/** 마크다운 편집기(textarea)의 현재 스크롤 위치 및 커서 부근에 있는 가장 가까운 제목(#~######)을 찾는다 */
+function findNearestHeadingFromTextarea(
+  markdownText: string,
+  scrollTop: number,
+  clientHeight: number,
+  cursorLineIndex?: number | null,
+): string | null {
+  if (!markdownText) return null;
+  const lines = markdownText.split("\n");
+  const lineHeight = 24; // font-mono leading-6 = 24px
+
+  let startIndex = Math.max(0, Math.floor(scrollTop / lineHeight));
+
+  if (typeof cursorLineIndex === "number" && cursorLineIndex >= 0) {
+    const cursorY = cursorLineIndex * lineHeight;
+    // 커서가 현재 보이는 뷰포트 내에 있을 때만 커서 위치를 우선합니다.
+    if (cursorY >= scrollTop && cursorY <= scrollTop + clientHeight) {
+      startIndex = Math.min(cursorLineIndex, lines.length - 1);
+    }
+  }
+
+  // 1. 위 방향 탐색
+  for (let i = startIndex; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (/^#{1,6}\s+/.test(line)) {
+      return line;
+    }
+  }
+
+  // 2. 아래 방향 탐색 (첫 제목 이전 위치일 경우)
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^#{1,6}\s+/.test(line)) {
+      return line;
+    }
+  }
+
+  return null;
+}
+
 export default function ConverterApp() {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [debounced, setDebounced] = useState<string | null>(null);
@@ -93,19 +166,52 @@ export default function ConverterApp() {
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLIFrameElement>(null);
-  const fullscreenRef = useRef<HTMLIFrameElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRatioRef = useRef<number>(0);
+  const activeHeadingIdRef = useRef<string | null>(null);
+  
+  const lastEditorScrollRef = useRef({ top: 0, height: 0 });
+  const getEditorScrollState = useCallback(() => {
+    if (textareaRef.current && textareaRef.current.clientHeight > 0) {
+      lastEditorScrollRef.current = {
+        top: textareaRef.current.scrollTop,
+        height: textareaRef.current.clientHeight,
+      };
+    }
+    return lastEditorScrollRef.current;
+  }, []);
 
-  /* 설정 저장 */
+  const latestViewRef = useRef(view);
   useEffect(() => {
-    saveAppearance(appearance);
-  }, [appearance]);
+    latestViewRef.current = view;
+  }, [view]);
 
-  /* 편집 중 과도한 재변환을 막는다 */
+  /* iframe 미리보기에서 전송하는 메시지 수신 (스크롤 동기화 및 준비 완료) */
   useEffect(() => {
-    if (markdown === null) return;
-    const timer = window.setTimeout(() => setDebounced(markdown), 220);
-    return () => window.clearTimeout(timer);
-  }, [markdown]);
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "md2notion:activeHeading") {
+        if (typeof event.data.id === "string") {
+          activeHeadingIdRef.current = event.data.id;
+        }
+      }
+      if (event.data?.type === "md2notion:scrollRatio") {
+        if (typeof event.data.ratio === "number") {
+          scrollRatioRef.current = event.data.ratio;
+        }
+      }
+      if (event.data?.type === "md2notion:ready") {
+        if (latestViewRef.current === "preview" || latestViewRef.current === "split") {
+          syncPreviewScroll();
+        }
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []); // syncPreviewScroll will be defined below but we can omit it if we use ref for it, wait let's move syncPreviewScroll up or disable eslint for deps. Actually it's better to declare syncPreviewScroll first.
+
+  const handleEditorScrollRatio = useCallback((ratio: number) => {
+    scrollRatioRef.current = ratio;
+  }, []);
 
   /*
    * Markdown -> HTML 변환 + sanitize.
@@ -129,6 +235,121 @@ export default function ConverterApp() {
     () => ({ ...appearance, docTitle, fileName }),
     [appearance, docTitle, fileName],
   );
+
+  const cursorLineRef = useRef<number | null>(null);
+
+  const handleCursorLineChange = useCallback((lineIndex: number) => {
+    cursorLineRef.current = lineIndex;
+  }, []);
+
+  const syncPreviewScroll = useCallback(() => {
+    if (!previewRef.current?.contentWindow) return;
+    const { top: currentScrollTop, height: currentClientHeight } = getEditorScrollState();
+    
+    let targetHeadingId: string | null = null;
+    let editorRatio = scrollRatioRef.current;
+
+    if (textareaRef.current) {
+      const scrollHeight = textareaRef.current.scrollHeight;
+      if (scrollHeight > currentClientHeight) {
+        editorRatio = currentScrollTop / (scrollHeight - currentClientHeight);
+      }
+    }
+
+    if (markdown && rendered?.toc) {
+      const headingLine = findNearestHeadingFromTextarea(
+        markdown,
+        currentScrollTop,
+        currentClientHeight,
+        cursorLineRef.current,
+      );
+      
+      if (headingLine) {
+        const plainText = headingLine.replace(/^#{1,6}\s+/, "").replace(/[`*_~]/g, "").trim();
+        const normalizedSearch = plainText.toLowerCase();
+        const matchedItem = rendered.toc.find((t) => {
+          const normalizedToc = t.text.toLowerCase().replace(/[`*_~]/g, "");
+          return normalizedToc === normalizedSearch || 
+                 normalizedToc.includes(normalizedSearch) || 
+                 normalizedSearch.includes(normalizedToc);
+        });
+        if (matchedItem) {
+          targetHeadingId = matchedItem.id;
+        }
+      }
+    }
+
+    if (targetHeadingId) {
+      previewRef.current.contentWindow.postMessage(
+        { type: "md2notion:scrollToHeading", id: targetHeadingId },
+        "*",
+      );
+    } else {
+      previewRef.current.contentWindow.postMessage(
+        { type: "md2notion:scrollToRatio", ratio: editorRatio },
+        "*",
+      );
+    }
+  }, [markdown, rendered, getEditorScrollState]);
+
+  /* 탭(문서/편집/분할) 전환 시 제목(## 목차) 위치 기반 스크롤 동기화 */
+  const handleViewChange = useCallback(
+    (newView: ViewMode) => {
+      // 뷰 전환 전 스크롤 상태 저장
+      getEditorScrollState();
+
+      setView(newView);
+
+      window.setTimeout(() => {
+        // 1. 문서 -> 편집 전환 시: 미리보기에서 가장 가깝게 읽고 있던 제목(#~######) 위치로 편집기 스크롤
+        if (newView === "source" || newView === "split") {
+          let lineIndex = -1;
+
+          if (activeHeadingIdRef.current && rendered?.toc && markdown) {
+            const headingItem = rendered.toc.find((t) => t.id === activeHeadingIdRef.current);
+            if (headingItem) {
+              lineIndex = findHeadingLineIndex(markdown, headingItem.text);
+            }
+          }
+
+          if (textareaRef.current) {
+            if (lineIndex >= 0) {
+              textareaRef.current.scrollTop = Math.max(0, lineIndex * 24 - 16);
+            } else {
+              const max = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
+              textareaRef.current.scrollTop = scrollRatioRef.current * max;
+            }
+          }
+        }
+
+        // 2. 편집 -> 문서 전환 시: 편집기의 상단/커서 위치의 가장 가까운 제목(#~######) 위치로 미리보기 스크롤
+        if (newView === "preview" || newView === "split") {
+          syncPreviewScroll();
+        }
+      }, 50);
+    },
+    [markdown, rendered, getEditorScrollState, syncPreviewScroll],
+  );
+
+  /* 설정 저장 */
+  useEffect(() => {
+    saveAppearance(appearance);
+  }, [appearance]);
+
+  /* 편집 중 과도한 재변환을 막는다 */
+  useEffect(() => {
+    if (markdown === null) return;
+    const timer = window.setTimeout(() => setDebounced(markdown), 220);
+    return () => window.clearTimeout(timer);
+  }, [markdown]);
+
+  /* 분할보기(split) 모드에서는 편집 공간을 넓게 쓰기 위해 미리보기 프레임 안의 목차를 숨긴다 */
+  const previewSettings: Settings = useMemo(() => {
+    if (view === "split") {
+      return { ...settings, showToc: false };
+    }
+    return settings;
+  }, [settings, view]);
 
   const fullHtml = useMemo(() => {
     if (!rendered || debounced === null) return "";
@@ -218,9 +439,8 @@ export default function ConverterApp() {
   }, [fullHtml, fileName]);
 
   const handlePrint = useCallback(() => {
-    const frame = fullscreen ? fullscreenRef.current : previewRef.current;
-    frame?.contentWindow?.postMessage({ type: "md2notion:print" }, "*");
-  }, [fullscreen]);
+    previewRef.current?.contentWindow?.postMessage({ type: "md2notion:print" }, "*");
+  }, []);
 
   const handleReset = useCallback(() => {
     if (!window.confirm("변환 설정을 기본값으로 되돌릴까요? Markdown 내용은 유지됩니다.")) {
@@ -244,16 +464,6 @@ export default function ConverterApp() {
     const timer = window.setTimeout(() => setError(null), 5000);
     return () => window.clearTimeout(timer);
   }, [error, markdown]);
-
-  /* 전체 화면 미리보기는 Esc 로 닫는다 */
-  useEffect(() => {
-    if (!fullscreen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFullscreen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [fullscreen]);
 
   if (markdown === null) {
     return (
@@ -306,13 +516,10 @@ export default function ConverterApp() {
         settings={settings}
         headingCount={rendered?.toc.length ?? 0}
         view={view}
-        onChangeView={setView}
+        onChangeView={handleViewChange}
         onChangeSetting={updateSetting}
         onOpenFile={() => fileInputRef.current?.click()}
         onDownload={handleDownload}
-        onFullscreen={() => setFullscreen(true)}
-        onPrint={handlePrint}
-        onReset={handleReset}
       />
 
       <input
@@ -330,62 +537,42 @@ export default function ConverterApp() {
 
       <div className="flex min-h-0 flex-1">
         <main className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-          {showSource ? (
-            <section
-              className={`min-h-0 min-w-0 border-stone-200 ${
-                showPreview
-                  ? "h-1/2 border-b md:h-auto md:w-2/5 md:border-b-0 md:border-r"
-                  : "flex-1"
-              }`}
-            >
-              <MarkdownSource
-                value={markdown}
-                onChange={setMarkdown}
-                onSelectText={handleSelectText}
-              />
-            </section>
-          ) : null}
+          <section
+            className={`min-h-0 min-w-0 border-stone-200 ${
+              !showSource
+                ? "hidden"
+                : showPreview
+                ? "h-1/2 border-b md:h-auto md:w-2/5 md:border-b-0 md:border-r"
+                : "flex-1"
+            }`}
+          >
+            <MarkdownSource
+              ref={textareaRef}
+              value={markdown}
+              onChange={setMarkdown}
+              onSelectText={handleSelectText}
+              onScrollRatio={handleEditorScrollRatio}
+              onCursorLineChange={handleCursorLineChange}
+            />
+          </section>
 
-          {showPreview ? (
-            <section className="min-h-0 min-w-0 flex-1 bg-white">
-              <Preview
-                ref={previewRef}
-                html={fullHtml}
-                settings={settings}
-                title={docTitle || fileName}
-                onSelectText={handleSelectText}
-              />
-            </section>
-          ) : null}
-        </main>
-      </div>
-
-      {fullscreen ? (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white">
-          <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2">
-            <span className="truncate text-[13px] text-stone-600">
-              {docTitle || fileName}
-            </span>
-            <button
-              type="button"
-              onClick={() => setFullscreen(false)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 px-2.5 py-1.5 text-[13px] text-stone-700 hover:bg-stone-100"
-            >
-              <CloseIcon />
-              닫기 (Esc)
-            </button>
-          </div>
-          <div className="min-h-0 flex-1">
+          <section
+            className={`min-h-0 min-w-0 bg-white ${
+              !showPreview ? "hidden" : "flex-1"
+            }`}
+          >
             <Preview
-              ref={fullscreenRef}
+              ref={previewRef}
               html={fullHtml}
-              settings={settings}
+              settings={previewSettings}
               title={docTitle || fileName}
               onSelectText={handleSelectText}
             />
-          </div>
-        </div>
-      ) : null}
+          </section>
+        </main>
+      </div>
+
+
 
       {dropping ? (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-stone-900/20">

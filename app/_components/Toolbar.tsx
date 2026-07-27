@@ -36,15 +36,12 @@ interface Props {
   onChangeSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   onOpenFile: () => void;
   onDownload: () => void;
-  onFullscreen: () => void;
-  onPrint: () => void;
-  onReset: () => void;
 }
 
 const TABS: { id: ViewMode; label: string; short: string }[] = [
-  { id: "preview", label: "미리보기 보기", short: "미리보기" },
-  { id: "split", label: "분할 보기", short: "분할" },
-  { id: "source", label: "원문 보기", short: "원문" },
+  { id: "preview", label: "문서 보기", short: "문서" },
+  { id: "source", label: "편집하기", short: "편집" },
+  { id: "split", label: "분할 보기", short: "분할보기" },
 ];
 
 const TOC_DEPTH_LABELS: Record<TocDepth, string> = {
@@ -60,7 +57,7 @@ const iconButton =
 const popoverButton =
   "inline-flex items-center gap-1.5 rounded-md border border-stone-200 bg-stone-50/80 px-2.5 py-1.5 text-[12.5px] font-medium text-stone-700 transition-all hover:bg-stone-100 hover:border-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 cursor-pointer";
 
-type PopoverKey = "width" | "fontSize" | "toc" | "features" | null;
+type PopoverKey = "width" | "fontSize" | "toc" | null;
 
 export default function Toolbar({
   fileName,
@@ -72,9 +69,6 @@ export default function Toolbar({
   onChangeSetting,
   onOpenFile,
   onDownload,
-  onFullscreen,
-  onPrint,
-  onReset,
 }: Props) {
   const [activePopover, setActivePopover] = useState<PopoverKey>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -376,78 +370,6 @@ export default function Toolbar({
           ) : null}
         </div>
 
-        {/* 기타 문서 기능 (Copy code, Progress bar, Print button) */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => togglePopover("features")}
-            aria-expanded={activePopover === "features"}
-            className={`${popoverButton} ${
-              activePopover === "features" ? "border-stone-400 bg-stone-100 text-stone-900" : ""
-            }`}
-            title="문서 옵션 및 기능 설정"
-          >
-            <SlidersIcon />
-            <span>기능</span>
-            <ChevronDownIcon
-              className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                activePopover === "features" ? "rotate-180" : ""
-              }`}
-            />
-          </button>
-
-          {activePopover === "features" ? (
-            <div className="absolute left-0 top-full mt-1.5 w-60 rounded-lg border border-stone-200 bg-white p-3 shadow-lg z-50 space-y-2.5">
-              <div className="border-b border-stone-100 pb-1 text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-                문서 기능 옵션
-              </div>
-
-              <label className="flex items-center justify-between py-0.5 cursor-pointer">
-                <span className="text-[13px] text-stone-800">코드 복사 버튼</span>
-                <input
-                  type="checkbox"
-                  checked={settings.showCopyButton}
-                  onChange={(e) => onChangeSetting("showCopyButton", e.target.checked)}
-                  className="h-4 w-4 rounded accent-stone-800 cursor-pointer"
-                />
-              </label>
-
-              <label className="flex items-center justify-between py-0.5 cursor-pointer">
-                <span className="text-[13px] text-stone-800">읽기 진행률 바</span>
-                <input
-                  type="checkbox"
-                  checked={settings.showProgress}
-                  onChange={(e) => onChangeSetting("showProgress", e.target.checked)}
-                  className="h-4 w-4 rounded accent-stone-800 cursor-pointer"
-                />
-              </label>
-
-              <label className="flex items-center justify-between py-0.5 cursor-pointer">
-                <span className="text-[13px] text-stone-800">인쇄 / PDF 저장 버튼</span>
-                <input
-                  type="checkbox"
-                  checked={settings.showPrintButton}
-                  onChange={(e) => onChangeSetting("showPrintButton", e.target.checked)}
-                  className="h-4 w-4 rounded accent-stone-800 cursor-pointer"
-                />
-              </label>
-
-              <div className="mt-1 border-t border-stone-100 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onReset();
-                    setActivePopover(null);
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-stone-300 py-1.5 text-[12px] font-medium text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-                >
-                  <ResetIcon className="h-3.5 w-3.5 text-stone-500" />
-                  설정 초기화
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
       </div>
 
       {/* 오른쪽: 보기 모드 (원문/분할/미리보기) + 액션 버튼 (전체화면, 인쇄, HTML 다운로드) */}
@@ -477,30 +399,8 @@ export default function Toolbar({
           ))}
         </div>
 
-        {/* 내보내기 & 전체화면 액션들 */}
+        {/* 내보내기 & 액션들 */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onFullscreen}
-            aria-label="전체 화면 미리보기"
-            title="전체 화면 미리보기"
-            className={iconButton}
-          >
-            <ExpandIcon />
-            <span className="hidden md:inline">전체 화면</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onPrint}
-            aria-label="인쇄 또는 PDF로 저장"
-            title="인쇄 또는 PDF로 저장"
-            className={iconButton}
-          >
-            <PrintIcon />
-            <span className="hidden md:inline">인쇄</span>
-          </button>
-
           <button
             type="button"
             onClick={onDownload}

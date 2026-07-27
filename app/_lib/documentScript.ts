@@ -130,6 +130,7 @@ export const DOCUMENT_SCRIPT = String.raw`
     }
 
     function pick() {
+      if (doc.documentElement.clientHeight === 0) return;
       var best = null;
       for (var i = 0; i < headings.length; i++) {
         var rect = headings[i].getBoundingClientRect();
@@ -157,7 +158,12 @@ export const DOCUMENT_SCRIPT = String.raw`
     window.addEventListener("scroll", function () {
       if (ticking) return;
       ticking = true;
-      window.requestAnimationFrame(function () { pick(); ticking = false; });
+      window.requestAnimationFrame(function () {
+        if (doc.documentElement.clientHeight > 0) {
+          pick();
+        }
+        ticking = false;
+      });
     }, { passive: true });
 
     pick();
@@ -353,6 +359,110 @@ export const DOCUMENT_SCRIPT = String.raw`
     });
   }
 
+  /* ---------------- 스크롤 위치 연동 ---------------- */
+  function initScrollSync() {
+    var ticking = false;
+    window.addEventListener("scroll", function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        var el = doc.documentElement;
+        if (el.clientHeight === 0) {
+          ticking = false;
+          return;
+        }
+        var max = (el.scrollHeight || 0) - (el.clientHeight || 0);
+        var ratio = max > 0 ? (el.scrollTop || doc.body.scrollTop || 0) / max : 0;
+        window.parent.postMessage({ type: "md2notion:scrollRatio", ratio: ratio }, "*");
+        ticking = false;
+      });
+    }, { passive: true });
+
+    function safeScrollToHeading(id, retries) {
+      if (retries === undefined) retries = 10;
+      var elem = doc.getElementById(id);
+      if (!elem && retries > 0) {
+        setTimeout(function() { safeScrollToHeading(id, retries - 1); }, 30);
+        return;
+      }
+      if (elem) {
+        var containerHeight = doc.documentElement.clientHeight || doc.body.clientHeight || 0;
+        if (containerHeight === 0 && retries > 0) {
+          setTimeout(function() { safeScrollToHeading(id, retries - 1); }, 30);
+          return;
+        }
+        elem.scrollIntoView({ behavior: "instant", block: "start" });
+      }
+    }
+
+    function safeScrollToRatio(ratio, retries) {
+      if (retries === undefined) retries = 10;
+      var el = doc.documentElement;
+      var max = (el.scrollHeight || 0) - (el.clientHeight || 0);
+      if (max <= 0 && retries > 0) {
+        setTimeout(function() { safeScrollToRatio(ratio, retries - 1); }, 30);
+        return;
+      }
+      var targetY = ratio * max;
+      window.scrollTo({ top: targetY, behavior: "instant" });
+    }
+
+    window.addEventListener("message", function (e) {
+      if (!e || !e.data) return;
+      if (e.data.type === "md2notion:scrollToHeading" && e.data.id) {
+        safeScrollToHeading(e.data.id);
+        return;
+      }
+      if (e.data.type === "md2notion:scrollToRatio" && typeof e.data.ratio === "number") {
+        safeScrollToRatio(e.data.ratio);
+      }
+    });
+  }
+
+  /* ---------------- 모든 단계(H1~H6, ###, #### 등) 제목 위치 실시간 추적 ---------------- */
+  function initAllHeadingsTracker() {
+    var currentHeadingId = null;
+
+    function pickHeading() {
+      if (doc.documentElement.clientHeight === 0) return;
+      var allHeadings = doc.querySelectorAll(".doc-article .md-heading");
+      if (!allHeadings || !allHeadings.length) return;
+
+      var bestId = null;
+      for (var i = 0; i < allHeadings.length; i++) {
+        var rect = allHeadings[i].getBoundingClientRect();
+        if (rect.top <= 160) {
+          bestId = allHeadings[i].id;
+        } else {
+          break;
+        }
+      }
+
+      if (!bestId && allHeadings[0]) {
+        bestId = allHeadings[0].id;
+      }
+
+      if (bestId && bestId !== currentHeadingId) {
+        currentHeadingId = bestId;
+        window.parent.postMessage({ type: "md2notion:activeHeading", id: bestId }, "*");
+      }
+    }
+
+    var ticking = false;
+    window.addEventListener("scroll", function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        if (doc.documentElement.clientHeight > 0) {
+          pickHeading();
+        }
+        ticking = false;
+      });
+    }, { passive: true });
+
+    pickHeading();
+  }
+
   function boot() {
     initCopyButtons();
     initProgress();
@@ -361,6 +471,9 @@ export const DOCUMENT_SCRIPT = String.raw`
     initSelectionHandler();
     initLiveSettingsUpdate();
     initAnchorNavigation();
+    initScrollSync();
+    initAllHeadingsTracker();
+    window.parent.postMessage({ type: "md2notion:ready" }, "*");
   }
 
   if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", boot);
