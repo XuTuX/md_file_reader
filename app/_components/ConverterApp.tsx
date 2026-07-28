@@ -407,13 +407,27 @@ export default function ConverterApp() {
 
   const loadMarkdown = useCallback(
     (text: string, name: string, id = createDocumentId(), savedTitle?: string, savedAt?: number) => {
+      const title = savedTitle ?? convertMarkdown(text).title ?? baseName(name);
+      const persistedAt = savedAt ?? Date.now();
+      const savedDocuments = saveRecentDocument({
+        id,
+        title,
+        fileName: name,
+        markdown: text,
+        updatedAt: persistedAt,
+      });
+      const persisted = savedDocuments.some(
+        (document) => document.id === id && document.updatedAt === persistedAt,
+      );
+
       setTitleOverride(savedTitle ?? null);
       setMarkdown(text);
       setDebounced(text);
       setFileName(name);
       setDocumentId(id);
-      setLastSavedAt(savedAt ?? null);
-      setSaveFailed(false);
+      setRecentDocuments(savedDocuments);
+      setLastSavedAt(persisted ? persistedAt : null);
+      setSaveFailed(!persisted);
       setView("preview");
       setError(null);
     },
@@ -462,6 +476,21 @@ export default function ConverterApp() {
       if (saved) setLastSavedAt(savedAt);
     }, 650);
     return () => window.clearTimeout(timer);
+  }, [docTitle, documentId, fileName, markdown]);
+
+  /* 자동 저장 대기 중 새로고침해도 마지막 편집 내용을 잃지 않도록 동기 저장한다. */
+  useEffect(() => {
+    if (markdown === null || documentId === null) return;
+    const handleBeforeUnload = () => {
+      saveRecentDocument({
+        id: documentId,
+        title: docTitle || baseName(fileName),
+        fileName,
+        markdown,
+      });
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [docTitle, documentId, fileName, markdown]);
 
   const handleFile = useCallback(
