@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { StoredDocument } from "../_lib/documentStorage";
 import { MAX_FILE_BYTES, formatBytes } from "../_lib/readFile";
 import { ClipboardIcon, EditIcon, FileIcon, UploadIcon } from "./icons";
 
@@ -8,6 +9,9 @@ interface Props {
   onFile: (file: File) => void;
   onPasteText: (text: string) => void;
   onSample: () => void;
+  recentDocuments: StoredDocument[];
+  onOpenRecent: (document: StoredDocument) => void;
+  onDeleteRecent: (id: string) => void;
   error: string | null;
   busy: boolean;
 }
@@ -16,6 +20,9 @@ export default function FileDropzone({
   onFile,
   onPasteText,
   onSample,
+  recentDocuments,
+  onOpenRecent,
+  onDeleteRecent,
   error,
   busy,
 }: Props) {
@@ -132,7 +139,7 @@ export default function FileDropzone({
         return;
       }
       onPasteText(text);
-    } catch (_err) {
+    } catch {
       setShowDirectInput(true);
       setPasteNotice(
         "클립보드 읽기 권한이 차단되었습니다. 아래 입력란에 Ctrl+V (Cmd+V)로 붙여넣어 주세요.",
@@ -151,16 +158,16 @@ export default function FileDropzone({
   }, [directText, onPasteText]);
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col items-center px-6 py-12 sm:py-20">
-      <div className="inline-flex items-center gap-2 rounded-full bg-stone-100 px-3.5 py-1.5 text-xs font-medium text-stone-600">
-        <span>📋 파일 업로드 & 복사·붙여넣기 지원</span>
+    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-6 py-12 sm:py-16">
+      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3.5 py-1.5 text-xs font-medium text-emerald-700">
+        <span>🔒 업로드 없이 브라우저에서만 처리</span>
       </div>
 
       <h1 className="mt-4 text-center text-3xl font-semibold tracking-tight text-stone-800 sm:text-4xl">
-        Markdown to Notion HTML
+        Markdown을 읽기 좋은 문서로
       </h1>
       <p className="mt-3 text-center text-[15px] leading-relaxed text-stone-500">
-        Markdown 파일이나 복사한 텍스트를 읽기 편한 문서형 HTML로 즉시 변환합니다.
+        붙여넣거나 파일을 여세요. 예쁜 문서로 만들고 HTML·PDF·공유 링크로 바로 내보낼 수 있습니다.
       </p>
 
       {/* 메인 드롭존 (파일 끌어놓기 + 키보드 붙여넣기 인식) */}
@@ -337,6 +344,54 @@ export default function FileDropzone({
           <span className="rounded-md bg-stone-100 px-3 py-2 text-stone-700">{pasteNotice}</span>
         ) : null}
       </div>
+
+      {recentDocuments.length > 0 ? (
+        <section className="mt-8 w-full border-t border-stone-200 pt-6" aria-labelledby="recent-heading">
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <h2 id="recent-heading" className="text-sm font-semibold text-stone-800">
+                최근 문서
+              </h2>
+              <p className="mt-0.5 text-xs text-stone-500">이 브라우저에 자동 저장된 문서입니다.</p>
+            </div>
+            <span className="text-xs text-stone-400">{recentDocuments.length}개</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {recentDocuments.map((document) => (
+              <div
+                key={document.id}
+                className="group flex min-w-0 items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm transition-colors hover:border-stone-300"
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenRecent(document)}
+                  className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+                >
+                  <span className="block truncate text-sm font-medium text-stone-800">
+                    {document.title || document.fileName}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11.5px] text-stone-400">
+                    {document.fileName} · {new Date(document.updatedAt).toLocaleString("ko-KR", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteRecent(document.id)}
+                  className="rounded-lg px-2 py-1.5 text-xs text-stone-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                  aria-label={`${document.title || document.fileName} 최근 문서에서 삭제`}
+                >
+                  삭제
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

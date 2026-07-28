@@ -15,9 +15,16 @@ interface Props {
 }
 
 export default function AiAssistantPanel({ selectedText, onAddToDocument, onClose }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    {
+      id: `user-init-${Date.now()}`,
+      role: "user",
+      content: "이게 뭐야?",
+      createdAt: Date.now(),
+    },
+  ]);
   const [inputQuestion, setInputQuestion] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [summarizing, setSummarizing] = useState(false);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -37,16 +44,6 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
   useEffect(() => {
     if (!selectedText) return;
     let isMounted = true;
-    setLoading(true);
-
-    const initialUserMsg: ChatMessage = {
-      id: `user-init-${Date.now()}`,
-      role: "user",
-      content: "이게 뭐야?",
-      createdAt: Date.now(),
-    };
-
-    setMessages([initialUserMsg]);
 
     sendChatMessage([], "이게 뭐야?", selectedText)
       .then((aiResponse) => {

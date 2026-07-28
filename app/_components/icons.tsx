@@ -42,20 +42,21 @@ export const DownloadIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const ShareIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.6 10.5 6.8-4" />
+    <path d="m8.6 13.5 6.8 4" />
+  </Svg>
+);
+
 export const PrintIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6 9V3h12v6" />
     <path d="M6 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1" />
     <path d="M6 14h12v7H6z" />
-  </Svg>
-);
-
-export const ExpandIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 9V4h5" />
-    <path d="M20 15v5h-5" />
-    <path d="M15 4h5v5" />
-    <path d="M9 20H4v-5" />
   </Svg>
 );
 
@@ -70,20 +71,6 @@ export const ResetIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 12a9 9 0 1 0 3-6.7" />
     <path d="M3 4v5h5" />
-  </Svg>
-);
-
-export const SlidersIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 6h10" />
-    <path d="M18 6h2" />
-    <path d="M4 12h4" />
-    <path d="M12 12h8" />
-    <path d="M4 18h10" />
-    <path d="M18 18h2" />
-    <circle cx="16" cy="6" r="2" />
-    <circle cx="10" cy="12" r="2" />
-    <circle cx="16" cy="18" r="2" />
   </Svg>
 );
 
@@ -131,5 +118,3 @@ export const TocIcon = (p: IconProps) => (
     <path d="M11 18h10" />
   </Svg>
 );
-
-

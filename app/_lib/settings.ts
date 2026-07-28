@@ -35,7 +35,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   showPrintButton: true,
 };
 
-const STORAGE_KEY = "md2notion:appearance:v1";
+const STORAGE_KEY = "markdown-document:appearance:v1";
+const LEGACY_STORAGE_KEY = "md2notion:appearance:v1";
 
 function isOneOf<T extends readonly number[]>(
   allowed: T,
@@ -71,7 +72,9 @@ export function normalizeAppearance(raw: unknown): AppearanceSettings {
 export function loadAppearance(): AppearanceSettings {
   if (typeof window === "undefined") return { ...DEFAULT_APPEARANCE };
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_APPEARANCE };
     return normalizeAppearance(JSON.parse(raw));
   } catch {

@@ -114,7 +114,7 @@ export function buildStandaloneHtml({
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
-<meta name="generator" content="Markdown to Notion HTML" />
+<meta name="generator" content="Markdown Document Studio" />
 <title>${escapeHtml(title)}</title>
 <style>
 ${buildDocumentCss(settings)}

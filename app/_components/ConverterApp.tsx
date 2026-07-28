@@ -5,7 +5,6 @@ import FileDropzone from "./FileDropzone";
 import MarkdownSource from "./MarkdownSource";
 import Preview from "./Preview";
 import Toolbar, { type ViewMode } from "./Toolbar";
-import { CloseIcon } from "./icons";
 import { convertMarkdown, type TocItem } from "../_lib/markdown";
 import { sanitizeHtml } from "../_lib/sanitize";
 import { buildStandaloneHtml, toHtmlFileName } from "../_lib/exportHtml";
@@ -21,6 +20,18 @@ import {
 import SelectionTooltip from "./SelectionTooltip";
 import AiAssistantPanel from "./AiAssistantPanel";
 import { insertSummaryIntoMarkdown } from "../_lib/aiAssistant";
+import {
+  createDocumentId,
+  deleteRecentDocument,
+  loadRecentDocuments,
+  saveRecentDocument,
+  type StoredDocument,
+} from "../_lib/documentStorage";
+import {
+  buildShareUrl,
+  decodeSharedDocument,
+  MAX_SHARE_URL_LENGTH,
+} from "../_lib/shareDocument";
 
 interface Rendered {
   bodyHtml: string;
@@ -30,6 +41,18 @@ interface Rendered {
 
 function baseName(fileName: string): string {
   return fileName.replace(/\.(md|markdown)$/i, "");
+}
+
+function downloadText(content: string, fileName: string, type: string): void {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** 마크다운 원문 텍스트에서 특정 제목(headingText)을 가진 행 번호(0-indexed)를 찾는다 (H1~H6 전체 지원) */
@@ -113,7 +136,10 @@ export default function ConverterApp() {
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<AppearanceSettings>(loadAppearance);
   const [view, setView] = useState<ViewMode>("preview");
-  const [fullscreen, setFullscreen] = useState(false);
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [recentDocuments, setRecentDocuments] = useState<StoredDocument[]>([]);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,6 +175,8 @@ export default function ConverterApp() {
       const updated = insertSummaryIntoMarkdown(markdown, selected, summaryContent);
       setMarkdown(updated);
       setDebounced(updated);
+      setLastSavedAt(null);
+      setSaveFailed(false);
       setNotice(`'${selected.slice(0, 12)}...' 대화 내용이 문서에 정리되어 반영되었습니다.`);
       setAiPanelOpen(false);
       setSelectionText(null);
@@ -185,29 +213,6 @@ export default function ConverterApp() {
   useEffect(() => {
     latestViewRef.current = view;
   }, [view]);
-
-  /* iframe 미리보기에서 전송하는 메시지 수신 (스크롤 동기화 및 준비 완료) */
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "md2notion:activeHeading") {
-        if (typeof event.data.id === "string") {
-          activeHeadingIdRef.current = event.data.id;
-        }
-      }
-      if (event.data?.type === "md2notion:scrollRatio") {
-        if (typeof event.data.ratio === "number") {
-          scrollRatioRef.current = event.data.ratio;
-        }
-      }
-      if (event.data?.type === "md2notion:ready") {
-        if (latestViewRef.current === "preview" || latestViewRef.current === "split") {
-          syncPreviewScroll();
-        }
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []); // syncPreviewScroll will be defined below but we can omit it if we use ref for it, wait let's move syncPreviewScroll up or disable eslint for deps. Actually it's better to declare syncPreviewScroll first.
 
   const handleEditorScrollRatio = useCallback((ratio: number) => {
     scrollRatioRef.current = ratio;
@@ -281,16 +286,36 @@ export default function ConverterApp() {
 
     if (targetHeadingId) {
       previewRef.current.contentWindow.postMessage(
-        { type: "md2notion:scrollToHeading", id: targetHeadingId },
+        { type: "markdown-document:scrollToHeading", id: targetHeadingId },
         "*",
       );
     } else {
       previewRef.current.contentWindow.postMessage(
-        { type: "md2notion:scrollToRatio", ratio: editorRatio },
+        { type: "markdown-document:scrollToRatio", ratio: editorRatio },
         "*",
       );
     }
   }, [markdown, rendered, getEditorScrollState]);
+
+  /* iframe 미리보기에서 전송하는 스크롤 상태를 수신한다. */
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "markdown-document:activeHeading" && typeof event.data.id === "string") {
+        activeHeadingIdRef.current = event.data.id;
+      }
+      if (event.data?.type === "markdown-document:scrollRatio" && typeof event.data.ratio === "number") {
+        scrollRatioRef.current = event.data.ratio;
+      }
+      if (
+        event.data?.type === "markdown-document:ready" &&
+        (latestViewRef.current === "preview" || latestViewRef.current === "split")
+      ) {
+        syncPreviewScroll();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [syncPreviewScroll]);
 
   /* 탭(문서/편집/분할) 전환 시 제목(## 목차) 위치 기반 스크롤 동기화 */
   const handleViewChange = useCallback(
@@ -365,10 +390,14 @@ export default function ConverterApp() {
     <K extends keyof Settings>(key: K, value: Settings[K]) => {
       if (key === "docTitle") {
         setTitleOverride(value as string);
+        setLastSavedAt(null);
+        setSaveFailed(false);
         return;
       }
       if (key === "fileName") {
         setFileName(value as string);
+        setLastSavedAt(null);
+        setSaveFailed(false);
         return;
       }
       setAppearance((prev) => ({ ...prev, [key]: value }) as AppearanceSettings);
@@ -376,14 +405,64 @@ export default function ConverterApp() {
     [],
   );
 
-  const loadMarkdown = useCallback((text: string, name: string) => {
-    setTitleOverride(null);
-    setMarkdown(text);
-    setDebounced(text);
-    setFileName(name);
-    setView("preview");
-    setError(null);
-  }, []);
+  const loadMarkdown = useCallback(
+    (text: string, name: string, id = createDocumentId(), savedTitle?: string, savedAt?: number) => {
+      setTitleOverride(savedTitle ?? null);
+      setMarkdown(text);
+      setDebounced(text);
+      setFileName(name);
+      setDocumentId(id);
+      setLastSavedAt(savedAt ?? null);
+      setSaveFailed(false);
+      setView("preview");
+      setError(null);
+    },
+    [],
+  );
+
+  /* 공유 링크가 있으면 우선 열고, 아니면 마지막 작업을 자동 복구한다. */
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedDocuments = loadRecentDocuments();
+      setRecentDocuments(savedDocuments);
+
+      const shared = decodeSharedDocument(window.location.hash);
+      if (shared) {
+        loadMarkdown(shared.markdown, shared.fileName, createDocumentId(), shared.title);
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+        setNotice("공유받은 문서를 열었습니다. 이 브라우저에 자동 저장됩니다.");
+        return;
+      }
+
+      const latest = savedDocuments[0];
+      if (latest) {
+        loadMarkdown(latest.markdown, latest.fileName, latest.id, latest.title, latest.updatedAt);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadMarkdown]);
+
+  /* 문서 변경 후 잠시 기다렸다가 브라우저에 자동 저장한다. */
+  useEffect(() => {
+    if (markdown === null || documentId === null) return;
+    const timer = window.setTimeout(() => {
+      const savedAt = Date.now();
+      const next = saveRecentDocument({
+        id: documentId,
+        title: docTitle || baseName(fileName),
+        fileName,
+        markdown,
+        updatedAt: savedAt,
+      });
+      setRecentDocuments(next);
+      const saved = next.some(
+        (document) => document.id === documentId && document.updatedAt === savedAt,
+      );
+      setSaveFailed(!saved);
+      if (saved) setLastSavedAt(savedAt);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [docTitle, documentId, fileName, markdown]);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -395,7 +474,7 @@ export default function ConverterApp() {
       setBusy(true);
       try {
         const text = await readMarkdownFile(file);
-        loadMarkdown(text, file.name);
+        loadMarkdown(text, file.name, createDocumentId());
       } catch {
         setError(`'${file.name}' 을(를) 읽는 중 오류가 발생했습니다.`);
       } finally {
@@ -413,33 +492,93 @@ export default function ConverterApp() {
         return;
       }
       const derivedName = name || deriveFileNameFromMarkdown(trimmed, "pasted.md");
-      loadMarkdown(trimmed, derivedName);
+      loadMarkdown(trimmed, derivedName, createDocumentId());
       setNotice("클립보드의 Markdown 텍스트를 불러왔습니다.");
     },
     [loadMarkdown],
   );
 
   const handleSample = useCallback(() => {
-    loadMarkdown(SAMPLE_MARKDOWN, SAMPLE_FILE_NAME);
+    loadMarkdown(SAMPLE_MARKDOWN, SAMPLE_FILE_NAME, createDocumentId());
   }, [loadMarkdown]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownloadHtml = useCallback(() => {
     if (!fullHtml) return;
     const name = toHtmlFileName(fileName);
-    const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = name;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadText(fullHtml, name, "text/html;charset=utf-8");
     setNotice(`${name} 을(를) 저장했습니다.`);
   }, [fullHtml, fileName]);
 
+  const handleDownloadMarkdown = useCallback(() => {
+    if (markdown === null) return;
+    const name = /\.(md|markdown)$/i.test(fileName) ? fileName : `${baseName(fileName)}.md`;
+    downloadText(markdown, name, "text/markdown;charset=utf-8");
+    setNotice(`${name} 원문을 저장했습니다.`);
+  }, [fileName, markdown]);
+
   const handlePrint = useCallback(() => {
-    previewRef.current?.contentWindow?.postMessage({ type: "md2notion:print" }, "*");
+    previewRef.current?.contentWindow?.postMessage({ type: "markdown-document:print" }, "*");
+  }, []);
+
+  const handleShare = useCallback(async () => {
+    if (markdown === null) return;
+    const url = buildShareUrl({ title: docTitle, fileName, markdown }, window.location);
+    if (url.length > MAX_SHARE_URL_LENGTH) {
+      setError("문서가 길어 링크로 공유할 수 없습니다. HTML 파일로 내보낸 뒤 공유해 주세요.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice("공유 링크를 복사했습니다. 문서는 링크 안에만 담기며 서버로 올라가지 않습니다.");
+    } catch {
+      setError("공유 링크를 클립보드에 복사하지 못했습니다.");
+    }
+  }, [docTitle, fileName, markdown]);
+
+  const handleGoHome = useCallback(() => {
+    if (markdown !== null && documentId !== null) {
+      const savedAt = Date.now();
+      const next = saveRecentDocument({
+        id: documentId,
+        title: docTitle || baseName(fileName),
+        fileName,
+        markdown,
+        updatedAt: savedAt,
+      });
+      if (!next.some((document) => document.id === documentId && document.updatedAt === savedAt)) {
+        setSaveFailed(true);
+        setError("브라우저 저장 공간이 부족해 문서함으로 이동하지 못했습니다. Markdown을 먼저 내보내 주세요.");
+        return;
+      }
+      setRecentDocuments(next);
+    } else {
+      setRecentDocuments(loadRecentDocuments());
+    }
+    setMarkdown(null);
+    setDebounced(null);
+    setDocumentId(null);
+    setLastSavedAt(null);
+    setSaveFailed(false);
+    setSelectionText(null);
+    setSelectionRect(null);
+    setAiPanelOpen(false);
+  }, [docTitle, documentId, fileName, markdown]);
+
+  const handleOpenRecent = useCallback(
+    (document: StoredDocument) => {
+      loadMarkdown(
+        document.markdown,
+        document.fileName,
+        document.id,
+        document.title,
+        document.updatedAt,
+      );
+    },
+    [loadMarkdown],
+  );
+
+  const handleDeleteRecent = useCallback((id: string) => {
+    setRecentDocuments(deleteRecentDocument(id));
   }, []);
 
   const handleReset = useCallback(() => {
@@ -448,6 +587,8 @@ export default function ConverterApp() {
     }
     setAppearance(DEFAULT_APPEARANCE);
     setTitleOverride(null);
+    setLastSavedAt(null);
+    setSaveFailed(false);
     setNotice("설정을 기본값으로 되돌렸습니다.");
   }, []);
 
@@ -472,6 +613,9 @@ export default function ConverterApp() {
           onFile={handleFile}
           onPasteText={handlePasteText}
           onSample={handleSample}
+          recentDocuments={recentDocuments}
+          onOpenRecent={handleOpenRecent}
+          onDeleteRecent={handleDeleteRecent}
           error={error}
           busy={busy}
         />
@@ -516,10 +660,25 @@ export default function ConverterApp() {
         settings={settings}
         headingCount={rendered?.toc.length ?? 0}
         view={view}
+        saveLabel={
+          saveFailed
+            ? "자동 저장 실패"
+            : lastSavedAt
+            ? `자동 저장됨 ${new Date(lastSavedAt).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : "자동 저장 중…"
+        }
         onChangeView={handleViewChange}
         onChangeSetting={updateSetting}
         onOpenFile={() => fileInputRef.current?.click()}
-        onDownload={handleDownload}
+        onGoHome={handleGoHome}
+        onDownloadHtml={handleDownloadHtml}
+        onDownloadMarkdown={handleDownloadMarkdown}
+        onPrint={handlePrint}
+        onShare={() => void handleShare()}
+        onReset={handleReset}
       />
 
       <input
@@ -549,7 +708,11 @@ export default function ConverterApp() {
             <MarkdownSource
               ref={textareaRef}
               value={markdown}
-              onChange={setMarkdown}
+              onChange={(value) => {
+                setMarkdown(value);
+                setLastSavedAt(null);
+                setSaveFailed(false);
+              }}
               onSelectText={handleSelectText}
               onScrollRatio={handleEditorScrollRatio}
               onCursorLineChange={handleCursorLineChange}

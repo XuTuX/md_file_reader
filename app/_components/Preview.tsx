@@ -38,7 +38,7 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
     if (settings && iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "md2notion:updateSettings",
+          type: "markdown-document:updateSettings",
           settings: {
             docTitle: settings.docTitle,
             maxWidth: settings.maxWidth,
@@ -86,7 +86,7 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
     if (!onSelectText) return;
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "md2notion:selection") {
+      if (event.data?.type === "markdown-document:selection") {
         const text = event.data.text;
         const rect = event.data.rect;
 

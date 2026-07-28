@@ -257,7 +257,7 @@ export const DOCUMENT_SCRIPT = String.raw`
     function notifySelection() {
       var sel = window.getSelection ? window.getSelection() : null;
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        window.parent.postMessage({ type: "md2notion:selection", text: "" }, "*");
+        window.parent.postMessage({ type: "markdown-document:selection", text: "" }, "*");
         return;
       }
       var text = sel.toString().trim();
@@ -265,7 +265,7 @@ export const DOCUMENT_SCRIPT = String.raw`
         var range = sel.getRangeAt(0);
         var rect = range.getBoundingClientRect();
         window.parent.postMessage({
-          type: "md2notion:selection",
+          type: "markdown-document:selection",
           text: text,
           rect: {
             top: rect.top,
@@ -285,7 +285,7 @@ export const DOCUMENT_SCRIPT = String.raw`
 
     doc.addEventListener("selectionchange", function () {
       if (!window.getSelection || window.getSelection().isCollapsed) {
-        window.parent.postMessage({ type: "md2notion:selection", text: "" }, "*");
+        window.parent.postMessage({ type: "markdown-document:selection", text: "" }, "*");
       }
     });
   }
@@ -296,14 +296,14 @@ export const DOCUMENT_SCRIPT = String.raw`
     if (btn) btn.addEventListener("click", function () { window.print(); });
     // 변환기 미리보기 화면에서 인쇄를 요청할 때 사용
     window.addEventListener("message", function (e) {
-      if (e && e.data && e.data.type === "md2notion:print") window.print();
+      if (e && e.data && e.data.type === "markdown-document:print") window.print();
     });
   }
 
   /* ---------------- 실시간 설정 업데이트 (iframe 깜빡임 방지) ---------------- */
   function initLiveSettingsUpdate() {
     window.addEventListener("message", function (e) {
-      if (!e || !e.data || e.data.type !== "md2notion:updateSettings") return;
+      if (!e || !e.data || e.data.type !== "markdown-document:updateSettings") return;
       var s = e.data.settings;
       if (!s) return;
 
@@ -373,7 +373,7 @@ export const DOCUMENT_SCRIPT = String.raw`
         }
         var max = (el.scrollHeight || 0) - (el.clientHeight || 0);
         var ratio = max > 0 ? (el.scrollTop || doc.body.scrollTop || 0) / max : 0;
-        window.parent.postMessage({ type: "md2notion:scrollRatio", ratio: ratio }, "*");
+        window.parent.postMessage({ type: "markdown-document:scrollRatio", ratio: ratio }, "*");
         ticking = false;
       });
     }, { passive: true });
@@ -409,11 +409,11 @@ export const DOCUMENT_SCRIPT = String.raw`
 
     window.addEventListener("message", function (e) {
       if (!e || !e.data) return;
-      if (e.data.type === "md2notion:scrollToHeading" && e.data.id) {
+      if (e.data.type === "markdown-document:scrollToHeading" && e.data.id) {
         safeScrollToHeading(e.data.id);
         return;
       }
-      if (e.data.type === "md2notion:scrollToRatio" && typeof e.data.ratio === "number") {
+      if (e.data.type === "markdown-document:scrollToRatio" && typeof e.data.ratio === "number") {
         safeScrollToRatio(e.data.ratio);
       }
     });
@@ -444,7 +444,7 @@ export const DOCUMENT_SCRIPT = String.raw`
 
       if (bestId && bestId !== currentHeadingId) {
         currentHeadingId = bestId;
-        window.parent.postMessage({ type: "md2notion:activeHeading", id: bestId }, "*");
+        window.parent.postMessage({ type: "markdown-document:activeHeading", id: bestId }, "*");
       }
     }
 
@@ -473,7 +473,7 @@ export const DOCUMENT_SCRIPT = String.raw`
     initAnchorNavigation();
     initScrollSync();
     initAllHeadingsTracker();
-    window.parent.postMessage({ type: "md2notion:ready" }, "*");
+    window.parent.postMessage({ type: "markdown-document:ready" }, "*");
   }
 
   if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", boot);

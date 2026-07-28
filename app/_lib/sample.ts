@@ -1,6 +1,6 @@
 export const SAMPLE_FILE_NAME = "SAMPLE_DOCUMENT.md";
 
-export const SAMPLE_MARKDOWN = `# Markdown to Notion HTML 예제 문서
+export const SAMPLE_MARKDOWN = `# Markdown 문서 스튜디오 예제
 
 이 문서는 변환기가 지원하는 Markdown 문법을 한눈에 확인하기 위한 예제입니다.
 왼쪽 목차를 눌러 이동해 보고, 코드 블록의 **복사** 버튼과 상단의 읽기 진행률 바도 확인해 보세요.
@@ -111,10 +111,10 @@ Markdown 안에 들어 있는 위험한 HTML 은 미리보기와 다운로드 �
 가로로 긴 코드는 코드 블록 안에서 가로 스크롤됩니다.
 
 \`\`\`json
-{ "name": "markdown-to-notion-html", "description": "Markdown 파일을 읽기 편한 문서형 HTML 로 변환합니다", "private": true, "license": "MIT" }
+{ "name": "markdown-document-studio", "description": "Markdown을 읽기 좋은 문서로 만듭니다", "private": true, "license": "MIT" }
 \`\`\`
 
 ## 마무리
 
-오른쪽 위 **HTML 다운로드** 버튼을 누르면 지금 보고 있는 문서가 CSS 와 JavaScript 가 모두 포함된 단일 \`.html\` 파일로 저장됩니다. 인터넷 연결 없이 파일을 직접 열어도 목차, 검색, 코드 복사가 그대로 동작합니다.
+오른쪽 위 **내보내기** 메뉴에서 HTML, Markdown, PDF/인쇄를 선택할 수 있습니다. HTML은 CSS와 JavaScript가 모두 포함된 단일 \`.html\` 파일이며, 인터넷 연결 없이 열어도 목차, 검색, 코드 복사가 그대로 동작합니다.
 `;
