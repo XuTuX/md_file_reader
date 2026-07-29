@@ -6,8 +6,6 @@ export interface TocItem {
   id: string;
   text: string;
   depth: number;
-  /** 원문 Markdown에서 제목이 시작되는 0-indexed 행. 찾을 수 없으면 null. */
-  lineIndex: number | null;
 }
 
 export interface ConvertResult {
@@ -41,50 +39,9 @@ function normalizeLang(lang: string | undefined): string {
  * 기본 구현을 감싸야 하는 경우에는 Renderer.prototype 의 메서드를 직접 호출한다.
  * 이때 `this` 는 marked 가 만든 실제 Renderer 인스턴스라서 `this.parser` 를 그대로 쓸 수 있다.
  */
-function collectHeadingLines(markdown: string): number[] {
-  const lines = markdown.split("\n");
-  const headings: number[] = [];
-  let fence: "`" | "~" | null = null;
-  let fenceLength = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0] as "`" | "~";
-      if (!fence) {
-        fence = marker;
-        fenceLength = fenceMatch[1].length;
-      } else if (marker === fence && fenceMatch[1].length >= fenceLength) {
-        fence = null;
-        fenceLength = 0;
-      }
-      continue;
-    }
-    if (fence) continue;
-
-    if (/^\s{0,3}(?:>\s*)*#{1,6}(?:\s+|$)/.test(line)) {
-      headings.push(index);
-      continue;
-    }
-
-    if (
-      line.trim() &&
-      index + 1 < lines.length &&
-      /^\s{0,3}(?:=+|-+)\s*$/.test(lines[index + 1])
-    ) {
-      headings.push(index);
-      index += 1;
-    }
-  }
-
-  return headings;
-}
-
-function createRendererObject(toc: TocItem[], headingLines: number[]): RendererObject {
+function createRendererObject(toc: TocItem[]): RendererObject {
   const slugs = new SlugGenerator();
   const base = Renderer.prototype;
-  let headingIndex = 0;
 
   const renderer = {
     heading(this: Renderer, { tokens, depth }: Tokens.Heading): string {
@@ -92,8 +49,7 @@ function createRendererObject(toc: TocItem[], headingLines: number[]): RendererO
       const plain = this.parser.parseInline(tokens, this.parser.textRenderer).trim();
       const id = slugs.create(plain || `heading-${toc.length + 1}`);
 
-      toc.push({ id, text: plain, depth, lineIndex: headingLines[headingIndex] ?? null });
-      headingIndex += 1;
+      toc.push({ id, text: plain, depth });
 
       return (
         `<h${depth} id="${escapeHtml(id)}" class="md-heading">` +
@@ -149,7 +105,7 @@ export function convertMarkdown(markdown: string): ConvertResult {
     breaks: false,
     pedantic: false,
   });
-  marked.use({ renderer: createRendererObject(toc, collectHeadingLines(markdown)) });
+  marked.use({ renderer: createRendererObject(toc) });
 
   const html = marked.parse(markdown, { async: false }) as string;
   const firstH1 = toc.find((item) => item.depth === 1);
@@ -159,9 +115,4 @@ export function convertMarkdown(markdown: string): ConvertResult {
     toc,
     title: firstH1?.text ?? null,
   };
-}
-
-/** 설정된 깊이까지만 목차에 포함한다. */
-export function filterToc(toc: TocItem[], maxDepth: number): TocItem[] {
-  return toc.filter((item) => item.depth <= maxDepth);
 }

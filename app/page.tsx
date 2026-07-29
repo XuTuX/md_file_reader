@@ -1,5 +1,5 @@
-import ConverterApp from "./_components/ConverterApp";
+import BookApp from "./_components/BookApp";
 
 export default function Home() {
-  return <ConverterApp />;
+  return <BookApp />;
 }

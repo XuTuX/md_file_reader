@@ -1,18 +1,16 @@
-# Markdown Document Studio
+# Manuscript Reader
 
-Markdown 파일이나 복사한 텍스트를 읽기 좋은 문서로 만들고 HTML·Markdown·PDF·공유 링크로 내보내는 브라우저 앱입니다.
-
-문서 변환, 자동 저장, 공유 링크 생성은 모두 브라우저에서 실행되며 원문을 서버로 전송하지 않습니다.
+하나 이상의 Markdown 파일을 브라우저에서 한 권의 책처럼 구성하고 읽는 앱입니다. 파일은 서버로 업로드되지 않으며 책장과 읽던 위치는 브라우저에 저장됩니다.
 
 ## 주요 기능
 
-- 파일 드롭, 클립보드 붙여넣기, 직접 입력
-- Markdown 편집, 미리보기, 분할 보기와 스크롤 동기화
-- 목차, 목차 검색, 코드 문법 강조와 복사
-- 최근 8개 문서 자동 저장·마지막 작업 복구
-- 서버 업로드 없는 URL fragment 공유 링크
-- 오프라인에서도 동작하는 단일 HTML, Markdown 원문, PDF/인쇄 내보내기
-- DOMPurify와 sandbox iframe을 활용한 XSS 방어
+- 단일 Markdown의 `##` 제목을 챕터로 자동 분리
+- 여러 Markdown 파일을 파일별 챕터로 구성
+- 책 제목, 저자, 챕터 제목과 순서 편집
+- 책장 저장과 마지막으로 읽은 챕터 복원
+- 목차, 이전·다음 장 이동, 글자 크기 조절
+- 코드 문법 강조, 표, 인용문 등 Markdown 본문 지원
+- DOMPurify를 통한 안전한 HTML 렌더링
 
 ## 실행
 
@@ -26,15 +24,11 @@ npm run dev
 ## 검증
 
 ```bash
-npm test
 npm run typecheck
 npm run lint
+npm test
 npm run build
 ```
-
-## 공유 방식
-
-공유 링크는 Markdown 문서를 인코딩해 URL의 `#share=` fragment에 담습니다. Fragment는 HTTP 요청에 포함되지 않으므로 앱 서버에 원문이 전송되지 않습니다. 문서가 너무 길어 URL 제한을 넘으면 HTML 파일 공유를 안내합니다.
 
 ## 기술 스택
 

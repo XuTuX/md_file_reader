@@ -63,17 +63,3 @@ export async function readMarkdownFile(file: File): Promise<string> {
   });
 }
 
-/** 붙여넣은 Markdown 본문에서 첫 번째 H1 제목을 추출하여 파일명으로 활용한다. */
-export function deriveFileNameFromMarkdown(text: string, defaultName = "pasted.md"): string {
-  const match = text.match(/^\s*#\s+(.+)$/m);
-  if (match && match[1].trim()) {
-    const raw = match[1]
-      .replace(/[*_`~]/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .trim();
-    const clean = raw.replace(/[\\/:*?"<>|]/g, "").trim();
-    if (clean) return `${clean}.md`;
-  }
-  return defaultName;
-}
-

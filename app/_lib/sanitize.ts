@@ -62,7 +62,7 @@ function getPurifier(): DOMPurify {
 }
 
 /**
- * Markdown 에서 생성된 HTML 을 DOM 에 넣거나 파일로 내보내기 전에 반드시 통과시킨다.
+ * Markdown 에서 생성된 HTML 을 책 본문 DOM에 넣기 전에 반드시 통과시킨다.
  * script / iframe / object / embed / 인라인 이벤트 핸들러 / javascript: URL 을 제거한다.
  */
 export function sanitizeHtml(dirty: string): string {
