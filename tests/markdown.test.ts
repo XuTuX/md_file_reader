@@ -7,14 +7,22 @@ describe("convertMarkdown", () => {
     expect(html).toContain('<h1 id="제목"');
     expect(html).toContain('<h2 id="소제목"');
     expect(toc).toEqual([
-      { id: "제목", text: "제목", depth: 1 },
-      { id: "소제목", text: "소제목", depth: 2 },
+      { id: "제목", text: "제목", depth: 1, lineIndex: 0 },
+      { id: "소제목", text: "소제목", depth: 2, lineIndex: 2 },
     ]);
   });
 
   it("중복된 제목에 서로 다른 id 를 준다", () => {
     const { toc } = convertMarkdown("## 설치\n## 설치\n## 설치\n");
     expect(toc.map((item) => item.id)).toEqual(["설치", "설치-2", "설치-3"]);
+    expect(toc.map((item) => item.lineIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("코드 블록 안의 # 문자를 제목 행으로 세지 않는다", () => {
+    const { toc } = convertMarkdown("```md\n# 가짜\n```\n\n## 진짜\n");
+    expect(toc).toEqual([
+      { id: "진짜", text: "진짜", depth: 2, lineIndex: 4 },
+    ]);
   });
 
   it("제목마다 # 앵커를 넣는다", () => {
@@ -98,10 +106,10 @@ describe("convertMarkdown", () => {
 
 describe("filterToc", () => {
   const toc = [
-    { id: "a", text: "a", depth: 1 },
-    { id: "b", text: "b", depth: 2 },
-    { id: "c", text: "c", depth: 3 },
-    { id: "d", text: "d", depth: 4 },
+    { id: "a", text: "a", depth: 1, lineIndex: 0 },
+    { id: "b", text: "b", depth: 2, lineIndex: 2 },
+    { id: "c", text: "c", depth: 3, lineIndex: 4 },
+    { id: "d", text: "d", depth: 4, lineIndex: 6 },
   ];
 
   it("설정한 깊이까지만 남긴다", () => {

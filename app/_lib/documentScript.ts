@@ -296,14 +296,14 @@ export const DOCUMENT_SCRIPT = String.raw`
     if (btn) btn.addEventListener("click", function () { window.print(); });
     // 변환기 미리보기 화면에서 인쇄를 요청할 때 사용
     window.addEventListener("message", function (e) {
-      if (e && e.data && e.data.type === "markdown-document:print") window.print();
+      if (e && e.source === window.parent && e.data && e.data.type === "markdown-document:print") window.print();
     });
   }
 
   /* ---------------- 실시간 설정 업데이트 (iframe 깜빡임 방지) ---------------- */
   function initLiveSettingsUpdate() {
     window.addEventListener("message", function (e) {
-      if (!e || !e.data || e.data.type !== "markdown-document:updateSettings") return;
+      if (!e || e.source !== window.parent || !e.data || e.data.type !== "markdown-document:updateSettings") return;
       var s = e.data.settings;
       if (!s) return;
 
@@ -408,7 +408,7 @@ export const DOCUMENT_SCRIPT = String.raw`
     }
 
     window.addEventListener("message", function (e) {
-      if (!e || !e.data) return;
+      if (!e || e.source !== window.parent || !e.data) return;
       if (e.data.type === "markdown-document:scrollToHeading" && e.data.id) {
         safeScrollToHeading(e.data.id);
         return;

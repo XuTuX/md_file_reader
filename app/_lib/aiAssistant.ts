@@ -1,13 +1,9 @@
-/**
- * AI 질문 대화 및 대화 기반 마크다운 문서 보충 유틸리티
- */
+import type {
+  AssistantProvider,
+  ChatMessage,
+} from "../_features/assistant/assistantProvider";
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number;
-}
+export type { ChatMessage } from "../_features/assistant/assistantProvider";
 
 /**
  * 멀티턴 대화: 기존 대화 히스토리와 새 질문을 받아 AI 대답을 생성합니다.
@@ -17,7 +13,7 @@ export async function sendChatMessage(
   newQuestion: string,
   selectedText: string,
 ): Promise<ChatMessage> {
-  // 비동기 AI 답변 시뮬레이션 (약 400ms)
+  // 실제 API를 연결하기 전 사용하는 로컬 데모 provider입니다.
   await new Promise((resolve) => setTimeout(resolve, 400));
 
   const q = newQuestion.trim();
@@ -83,6 +79,11 @@ export async function summarizeConversationForDocument(
 
   return `> 💡 **[보충 노트] ${target} (AI 대화 요약)**\n> ${combinedBody}`;
 }
+
+export const mockAssistantProvider: AssistantProvider = {
+  sendMessage: sendChatMessage,
+  summarize: summarizeConversationForDocument,
+};
 
 /**
  * 생성된 대화 요약 노트를 마크다운 문서의 선택 구절 아래에 자연스럽게 삽입합니다.

@@ -1,13 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
-
-interface SelectionRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
+import type { SelectionRect } from "../_features/document/types";
 
 interface Props {
   value: string;

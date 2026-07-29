@@ -6,6 +6,11 @@ export interface StoredDocument {
   updatedAt: number;
 }
 
+export interface SaveDocumentResult {
+  documents: StoredDocument[];
+  saved: boolean;
+}
+
 const STORAGE_KEY = "markdown-documents:v1";
 const MAX_RECENT_DOCUMENTS = 8;
 
@@ -48,8 +53,8 @@ export function loadRecentDocuments(): StoredDocument[] {
 
 export function saveRecentDocument(
   document: Omit<StoredDocument, "updatedAt"> & { updatedAt?: number },
-): StoredDocument[] {
-  if (typeof window === "undefined") return [];
+): SaveDocumentResult {
+  if (typeof window === "undefined") return { documents: [], saved: false };
   const saved: StoredDocument = {
     ...document,
     updatedAt: document.updatedAt ?? Date.now(),
@@ -61,9 +66,9 @@ export function saveRecentDocument(
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {
-    return loadRecentDocuments();
+    return { documents: loadRecentDocuments(), saved: false };
   }
-  return next;
+  return { documents: next, saved: true };
 }
 
 export function deleteRecentDocument(id: string): StoredDocument[] {
@@ -76,4 +81,3 @@ export function deleteRecentDocument(id: string): StoredDocument[] {
   }
   return next;
 }
-

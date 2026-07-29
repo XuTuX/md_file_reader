@@ -1,14 +1,12 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { Settings } from "../_lib/settings";
-
-interface SelectionRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
+import type { SelectionRect } from "../_features/document/types";
+import {
+  isPreviewToParentMessage,
+  postToPreview,
+} from "../_features/preview/previewMessages";
 
 interface Props {
   html: string;
@@ -28,65 +26,38 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [srcDoc, setSrcDoc] = useState(html);
-  const lastSettingsRef = useRef<Settings | undefined>(settings);
 
   useImperativeHandle(ref, () => iframeRef.current as HTMLIFrameElement);
 
-  /* 설정/제목 변경 시 iframe 재로드 없이 postMessage 로 라이브 DOM/CSS 변수 업데이트 */
-  useEffect(() => {
+  const sendSettings = useCallback(() => {
     if (settings && iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(
-        {
-          type: "markdown-document:updateSettings",
-          settings: {
-            docTitle: settings.docTitle,
-            maxWidth: settings.maxWidth,
-            fontSize: settings.fontSize,
-            showToc: settings.showToc,
-            showProgress: settings.showProgress,
-            showPrintButton: settings.showPrintButton,
-          },
+      postToPreview(iframeRef.current, {
+        type: "markdown-document:updateSettings",
+        settings: {
+          docTitle: settings.docTitle,
+          maxWidth: settings.maxWidth,
+          fontSize: settings.fontSize,
+          showToc: settings.showToc,
+          showProgress: settings.showProgress,
+          showPrintButton: settings.showPrintButton,
         },
-        "*",
-      );
+      });
     }
   }, [settings]);
 
-  /*
-   * 마크다운 본문 변경 시에만 srcDoc 을 갱신하고,
-   * 순수 설정/제목 변경 시에는 postMessage 가 처리하므로 srcDoc 재초기화(깜빡임)를 스킵합니다.
-   */
-  const lastHtmlRef = useRef(html);
+  /* 설정/제목 변경 시 iframe 재로드 없이 postMessage 로 라이브 DOM/CSS 변수 업데이트 */
+  useEffect(() => sendSettings(), [sendSettings]);
 
   useEffect(() => {
-    const settingsChanged =
-      lastSettingsRef.current &&
-      settings &&
-      (lastSettingsRef.current.docTitle !== settings.docTitle ||
-        lastSettingsRef.current.maxWidth !== settings.maxWidth ||
-        lastSettingsRef.current.fontSize !== settings.fontSize ||
-        lastSettingsRef.current.showToc !== settings.showToc ||
-        lastSettingsRef.current.showProgress !== settings.showProgress ||
-        lastSettingsRef.current.showPrintButton !== settings.showPrintButton);
-
-    lastSettingsRef.current = settings;
-    const htmlChanged = lastHtmlRef.current !== html;
-    lastHtmlRef.current = html;
-
-    // 순수 설정 변경인 경우 srcDoc 을 갱신하여 iframe 을 재로드하지 않는다 (깜빡임 완전 제거)
-    if (settingsChanged && !htmlChanged && iframeRef.current?.contentWindow) {
-      return;
-    }
-
-    setSrcDoc(html);
-  }, [html, settings]);
-
-  useEffect(() => {
-    if (!onSelectText) return;
-
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "markdown-document:selection") {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      if (!isPreviewToParentMessage(event.data)) return;
+      if (event.data.type === "markdown-document:ready") {
+        sendSettings();
+        return;
+      }
+      if (event.data.type === "markdown-document:selection") {
+        if (!onSelectText) return;
         const text = event.data.text;
         const rect = event.data.rect;
 
@@ -112,13 +83,14 @@ const Preview = forwardRef<HTMLIFrameElement, Props>(function Preview(
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onSelectText]);
+  }, [onSelectText, sendSettings]);
 
   return (
     <iframe
       ref={iframeRef}
       title={`${title} 미리보기`}
-      srcDoc={srcDoc}
+      srcDoc={html}
+      onLoad={sendSettings}
       // allow-same-origin 을 주지 않아 미리보기 문서가 앱의 origin 에 접근하지 못한다.
       sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals"
       allow="clipboard-write"

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { StoredDocument } from "../_lib/documentStorage";
 import { MAX_FILE_BYTES, formatBytes } from "../_lib/readFile";
 import { ClipboardIcon, EditIcon, FileIcon, UploadIcon } from "./icons";
+import DirectTextInput from "../_features/import/components/DirectTextInput";
+import RecentDocuments from "../_features/import/components/RecentDocuments";
 
 interface Props {
   onFile: (file: File) => void;
@@ -27,10 +29,8 @@ export default function FileDropzone({
   busy,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const directTextRef = useRef<HTMLTextAreaElement>(null);
   const [dragging, setDragging] = useState(false);
   const [showDirectInput, setShowDirectInput] = useState(false);
-  const [directText, setDirectText] = useState("");
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
   const dragDepth = useRef(0);
@@ -144,18 +144,8 @@ export default function FileDropzone({
       setPasteNotice(
         "클립보드 읽기 권한이 차단되었습니다. 아래 입력란에 Ctrl+V (Cmd+V)로 붙여넣어 주세요.",
       );
-      setTimeout(() => directTextRef.current?.focus(), 100);
     }
   }, [onPasteText]);
-
-  /* 직접 입력 폼 제출 */
-  const handleDirectSubmit = useCallback(() => {
-    if (!directText.trim()) {
-      setPasteNotice("변환할 Markdown 텍스트를 입력해 주세요.");
-      return;
-    }
-    onPasteText(directText);
-  }, [directText, onPasteText]);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-6 py-12 sm:py-16">
@@ -259,9 +249,6 @@ export default function FileDropzone({
           type="button"
           onClick={() => {
             setShowDirectInput((prev) => !prev);
-            if (!showDirectInput) {
-              setTimeout(() => directTextRef.current?.focus(), 100);
-            }
           }}
           disabled={busy}
           className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2 disabled:opacity-50"
@@ -282,58 +269,7 @@ export default function FileDropzone({
 
       {/* 텍스트 직접 입력/붙여넣기 폼 */}
       {showDirectInput ? (
-        <div className="mt-6 w-full rounded-xl border border-stone-200 bg-white p-4 shadow-sm transition-all">
-          <div className="flex items-center justify-between pb-2">
-            <label
-              htmlFor="direct-markdown-input"
-              className="text-xs font-semibold uppercase tracking-wider text-stone-500"
-            >
-              Markdown 텍스트 직접 입력 / 붙여넣기
-            </label>
-            <span className="text-xs text-stone-400">
-              <kbd className="font-mono">Ctrl+Enter</kbd> 로 변환
-            </span>
-          </div>
-          <textarea
-            id="direct-markdown-input"
-            ref={directTextRef}
-            rows={6}
-            value={directText}
-            onChange={(e) => setDirectText(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                e.preventDefault();
-                handleDirectSubmit();
-              }
-            }}
-            placeholder="여기에 Markdown 텍스트를 직접 붙여넣거나 작성하세요... (예: # 문서 제목&#10;&#10;내용 작성...)"
-            className="w-full resize-y rounded-lg border border-stone-200 bg-stone-50/50 p-3 font-mono text-sm leading-relaxed text-stone-800 placeholder-stone-400 focus:border-stone-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-stone-400"
-          />
-          <div className="mt-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const text = await navigator.clipboard.readText();
-                  if (text) setDirectText(text);
-                } catch {
-                  setPasteNotice("클립보드 접근 권한이 필요합니다.");
-                }
-              }}
-              className="text-xs font-medium text-stone-600 hover:text-stone-900"
-            >
-              📋 클립보드 내용 불러오기
-            </button>
-            <button
-              type="button"
-              onClick={handleDirectSubmit}
-              disabled={!directText.trim()}
-              className="rounded-lg bg-stone-800 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-stone-700 disabled:opacity-40"
-            >
-              변환하기
-            </button>
-          </div>
-        </div>
+        <DirectTextInput onSubmit={onPasteText} onNotice={setPasteNotice} />
       ) : null}
 
       {/* 상태 메시지 및 오류 알림 */}
@@ -345,53 +281,11 @@ export default function FileDropzone({
         ) : null}
       </div>
 
-      {recentDocuments.length > 0 ? (
-        <section className="mt-8 w-full border-t border-stone-200 pt-6" aria-labelledby="recent-heading">
-          <div className="mb-3 flex items-end justify-between">
-            <div>
-              <h2 id="recent-heading" className="text-sm font-semibold text-stone-800">
-                최근 문서
-              </h2>
-              <p className="mt-0.5 text-xs text-stone-500">이 브라우저에 자동 저장된 문서입니다.</p>
-            </div>
-            <span className="text-xs text-stone-400">{recentDocuments.length}개</span>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {recentDocuments.map((document) => (
-              <div
-                key={document.id}
-                className="group flex min-w-0 items-center gap-2 rounded-xl border border-stone-200 bg-white p-2 shadow-sm transition-colors hover:border-stone-300"
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpenRecent(document)}
-                  className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
-                >
-                  <span className="block truncate text-sm font-medium text-stone-800">
-                    {document.title || document.fileName}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11.5px] text-stone-400">
-                    {document.fileName} · {new Date(document.updatedAt).toLocaleString("ko-KR", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDeleteRecent(document.id)}
-                  className="rounded-lg px-2 py-1.5 text-xs text-stone-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-                  aria-label={`${document.title || document.fileName} 최근 문서에서 삭제`}
-                >
-                  삭제
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <RecentDocuments
+        documents={recentDocuments}
+        onOpen={onOpenRecent}
+        onDelete={onDeleteRecent}
+      />
     </div>
   );
 }

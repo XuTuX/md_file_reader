@@ -2,19 +2,25 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  sendChatMessage,
-  summarizeConversationForDocument,
+  mockAssistantProvider,
   type ChatMessage,
 } from "../_lib/aiAssistant";
+import type { AssistantProvider } from "../_features/assistant/assistantProvider";
 import { CloseIcon } from "./icons";
 
 interface Props {
   selectedText: string;
   onAddToDocument: (selectedText: string, summary: string) => void;
   onClose: () => void;
+  provider?: AssistantProvider;
 }
 
-export default function AiAssistantPanel({ selectedText, onAddToDocument, onClose }: Props) {
+export default function AiAssistantPanel({
+  selectedText,
+  onAddToDocument,
+  onClose,
+  provider = mockAssistantProvider,
+}: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: `user-init-${Date.now()}`,
@@ -45,7 +51,7 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
     if (!selectedText) return;
     let isMounted = true;
 
-    sendChatMessage([], "이게 뭐야?", selectedText)
+    provider.sendMessage([], "이게 뭐야?", selectedText)
       .then((aiResponse) => {
         if (isMounted) {
           setMessages((prev) => [...prev, aiResponse]);
@@ -59,7 +65,7 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
     return () => {
       isMounted = false;
     };
-  }, [selectedText]);
+  }, [provider, selectedText]);
 
   // 사용자 추가 질문 전송
   const handleSend = async (e?: React.FormEvent) => {
@@ -80,7 +86,7 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
     setLoading(true);
 
     try {
-      const aiReply = await sendChatMessage(updatedHistory, q, selectedText);
+      const aiReply = await provider.sendMessage(updatedHistory, q, selectedText);
       setMessages((prev) => [...prev, aiReply]);
     } catch {
       // ignore
@@ -95,7 +101,7 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
     setSummarizing(true);
 
     try {
-      const summary = await summarizeConversationForDocument(messages, selectedText);
+      const summary = await provider.summarize(messages, selectedText);
       onAddToDocument(selectedText, summary);
     } catch {
       // ignore
@@ -113,7 +119,7 @@ export default function AiAssistantPanel({ selectedText, onAddToDocument, onClos
             💬
           </span>
           <div>
-            <h3 className="font-semibold text-stone-800 text-sm">AI 문맥 실시간 대화</h3>
+            <h3 className="font-semibold text-stone-800 text-sm">문맥 도우미</h3>
             <p className="text-[11px] text-stone-400">자유롭게 추가 질문 후 문서에 반영하세요</p>
           </div>
         </div>
