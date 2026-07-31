@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { anchorTargetId, buildAnchorIndex, findAnchorChapter } from "../app/_lib/anchors";
+import {
+  anchorTargetId,
+  buildAnchorIndex,
+  findAnchorChapter,
+  findChapterByFileName,
+  parseInternalLink,
+} from "../app/_lib/anchors";
 import { splitMarkdownIntoChapters } from "../app/_lib/book";
 
 describe("anchorTargetId", () => {
@@ -15,6 +21,70 @@ describe("anchorTargetId", () => {
     expect(anchorTargetId("https://example.com#설치")).toBeNull();
     expect(anchorTargetId("./other.md#설치")).toBeNull();
     expect(anchorTargetId("#")).toBeNull();
+  });
+});
+
+describe("parseInternalLink", () => {
+  it("외부 링크는 브라우저에 맡긴다", () => {
+    expect(parseInternalLink("https://example.com/docs")).toBeNull();
+    expect(parseInternalLink("http://example.com")).toBeNull();
+    expect(parseInternalLink("//example.com/a.md")).toBeNull();
+    expect(parseInternalLink("mailto:a@b.com")).toBeNull();
+    expect(parseInternalLink("tel:01012345678")).toBeNull();
+    expect(parseInternalLink("")).toBeNull();
+  });
+
+  it("앵커 링크를 알아본다", () => {
+    expect(parseInternalLink("#설치-방법")).toEqual({ kind: "anchor", id: "설치-방법" });
+    expect(parseInternalLink("#")).toEqual({ kind: "anchor", id: "" });
+  });
+
+  it("상대 경로 파일 링크에서 파일 이름과 앵커를 뽑는다", () => {
+    expect(parseInternalLink("설치.md")).toEqual({
+      kind: "file",
+      fileName: "설치.md",
+      id: null,
+    });
+    expect(parseInternalLink("./docs/설치.md#준비물")).toEqual({
+      kind: "file",
+      fileName: "설치.md",
+      id: "준비물",
+    });
+    expect(parseInternalLink("../02-설치.markdown?raw=1")).toEqual({
+      kind: "file",
+      fileName: "02-설치.markdown",
+      id: null,
+    });
+  });
+
+  it("앱에 없는 경로도 내부 링크로 보고 직접 처리한다", () => {
+    // 브라우저에 맡기면 404 로 나가면서 읽던 화면이 사라진다.
+    expect(parseInternalLink("/about")).toEqual({
+      kind: "file",
+      fileName: "about",
+      id: null,
+    });
+  });
+});
+
+describe("findChapterByFileName", () => {
+  const chapters = [
+    { title: "들어가며", markdown: "", fileName: "00-intro.md" },
+    { title: "1. 프로젝트 생성", markdown: "", fileName: "01-project.md" },
+  ];
+
+  it("확장자와 대소문자가 달라도 파일 이름으로 장을 찾는다", () => {
+    expect(findChapterByFileName(chapters, "01-project.md")).toBe(1);
+    expect(findChapterByFileName(chapters, "01-PROJECT")).toBe(1);
+  });
+
+  it("파일 이름이 없으면 장 제목 slug 로도 맞춰 본다", () => {
+    expect(findChapterByFileName(chapters, "1-프로젝트-생성.md")).toBe(1);
+  });
+
+  it("없는 파일은 null 이다", () => {
+    expect(findChapterByFileName(chapters, "99-없는파일.md")).toBeNull();
+    expect(findChapterByFileName(chapters, "")).toBeNull();
   });
 });
 

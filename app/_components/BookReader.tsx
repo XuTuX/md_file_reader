@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { anchorTargetId, buildAnchorIndex, findAnchorChapter } from "../_lib/anchors";
+import {
+  buildAnchorIndex,
+  findAnchorChapter,
+  findChapterByFileName,
+  parseInternalLink,
+} from "../_lib/anchors";
 import { convertMarkdown } from "../_lib/markdown";
 import { sanitizeHtml } from "../_lib/sanitize";
 import { slugify } from "../_lib/slug";
@@ -15,6 +20,15 @@ interface Props {
   onChapterChange: (index: number) => void;
 }
 
+/** 책 안에서 찾지 못한 링크를 눌렀을 때 보여 줄 안내. */
+function missingLinkNotice(label: string | null): string {
+  const text = (label ?? "").replace(/\s+/g, " ").trim().replace(/#$/, "");
+  const shown = text.length > 18 ? `${text.slice(0, 18)}…` : text;
+  return shown
+    ? `이 책에서 '${shown}' 위치를 찾지 못했습니다.`
+    : "이 책에 없는 링크입니다.";
+}
+
 export default function BookReader({
   book,
   message,
@@ -25,6 +39,7 @@ export default function BookReader({
   const [chapterIndex, setChapterIndex] = useState(book.lastChapterIndex);
   const [fontSize, setFontSize] = useState(17);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const scrollRef = useRef<HTMLElement>(null);
   const chapter = book.chapters[chapterIndex];
   const bodyHtml = useMemo(
@@ -32,6 +47,8 @@ export default function BookReader({
     [chapter.markdown],
   );
   const progress = ((chapterIndex + 1) / book.chapters.length) * 100;
+  // 링크 안내는 책장 저장 메시지보다 방금 누른 동작에 대한 반응이라 우선한다.
+  const toast = notice ?? message;
 
   const selectChapter = (index: number) => {
     setChapterIndex(index);
@@ -60,9 +77,11 @@ export default function BookReader({
   };
 
   /**
-   * 본문 안의 문서 내부 링크(`#앵커`) 처리.
+   * 본문 안의 책 내부 링크(`#앵커`, `설치.md`) 처리.
+   *
    * H2 가 장으로 분리되면서 대상이 다른 장에 있을 수 있으므로,
    * 현재 장에 없으면 해당 장으로 넘어간 뒤 그 위치로 이동한다.
+   * 책 안에서 찾지 못한 링크는 없는 주소로 나가지 않도록 막고 이유만 알린다.
    */
   const handleBodyClick = (event: MouseEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.button !== 0) return;
@@ -71,14 +90,24 @@ export default function BookReader({
     const link = (event.target as HTMLElement).closest("a[href]");
     if (!(link instanceof HTMLAnchorElement)) return;
 
-    const targetId = anchorTargetId(link.getAttribute("href") ?? "");
-    if (!targetId) return;
+    // 외부 링크(http/https/mailto 등)만 브라우저에 맡긴다.
+    const target = parseInternalLink(link.getAttribute("href") ?? "");
+    if (!target) return;
 
     event.preventDefault();
-    if (scrollToAnchor(targetId, "smooth")) return;
+    if (target.kind === "anchor" && !target.id) return;
 
-    const nextChapter = findAnchorChapter(getAnchorIndex(), targetId);
-    if (nextChapter === null) return;
+    if (target.id && scrollToAnchor(target.id, "smooth")) return;
+
+    const index = getAnchorIndex();
+    const byAnchor = target.id ? findAnchorChapter(index, target.id) : null;
+    const nextChapter =
+      byAnchor ?? (target.kind === "file" ? findChapterByFileName(book.chapters, target.fileName) : null);
+
+    if (nextChapter === null) {
+      setNotice(missingLinkNotice(link.textContent));
+      return;
+    }
     if (nextChapter === chapterIndex) {
       scrollRef.current?.scrollTo({ top: 0 });
       return;
@@ -86,7 +115,8 @@ export default function BookReader({
 
     // 장 제목 자체를 가리키는 링크라면 그 장의 맨 위에서 시작한다.
     const headSlug = slugify(book.chapters[nextChapter].title);
-    pendingAnchorRef.current = slugify(targetId) === headSlug ? null : targetId;
+    pendingAnchorRef.current =
+      target.id && slugify(target.id) !== headSlug ? target.id : null;
     selectChapter(nextChapter);
   };
 
@@ -97,6 +127,12 @@ export default function BookReader({
     if (anchor && scrollToAnchor(anchor, "instant")) return;
     scrollRef.current?.scrollTo({ top: 0 });
   }, [chapterIndex]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-[#f5f0e7] text-[#352f29]">
@@ -254,13 +290,13 @@ export default function BookReader({
         </main>
       </div>
 
-      {message ? (
+      {toast ? (
         <div
           role="status"
           aria-live="polite"
           className="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2.5 text-center text-xs text-white shadow-xl"
         >
-          {message}
+          {toast}
         </div>
       ) : null}
     </div>
