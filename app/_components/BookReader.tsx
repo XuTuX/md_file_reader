@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { anchorTargetId, buildAnchorIndex, findAnchorChapter } from "../_lib/anchors";
 import { convertMarkdown } from "../_lib/markdown";
 import { sanitizeHtml } from "../_lib/sanitize";
-import type { StoredBook } from "../_lib/bookStorage";
+import { slugify } from "../_lib/slug";
+import type { BookChapter, StoredBook } from "../_lib/bookStorage";
 
 interface Props {
   book: StoredBook;
@@ -37,7 +39,62 @@ export default function BookReader({
     onChapterChange(index);
   };
 
+  /** 장을 옮긴 뒤 이동해야 할 앵커. 렌더가 끝난 다음 effect 에서 소비한다. */
+  const pendingAnchorRef = useRef<string | null>(null);
+  /** 앵커 색인은 책 전체를 파싱해야 하므로 실제로 링크를 누를 때 한 번만 만든다. */
+  const anchorIndexRef = useRef<{ chapters: BookChapter[]; map: Map<string, number> } | null>(null);
+
+  const getAnchorIndex = () => {
+    if (anchorIndexRef.current?.chapters !== book.chapters) {
+      anchorIndexRef.current = { chapters: book.chapters, map: buildAnchorIndex(book.chapters) };
+    }
+    return anchorIndexRef.current.map;
+  };
+
+  const scrollToAnchor = (id: string, behavior: ScrollBehavior): boolean => {
+    const root = scrollRef.current;
+    const target = root?.querySelector(`#${CSS.escape(id)}`);
+    if (!(target instanceof HTMLElement)) return false;
+    target.scrollIntoView({ behavior, block: "start" });
+    return true;
+  };
+
+  /**
+   * 본문 안의 문서 내부 링크(`#앵커`) 처리.
+   * H2 가 장으로 분리되면서 대상이 다른 장에 있을 수 있으므로,
+   * 현재 장에 없으면 해당 장으로 넘어간 뒤 그 위치로 이동한다.
+   */
+  const handleBodyClick = (event: MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    const link = (event.target as HTMLElement).closest("a[href]");
+    if (!(link instanceof HTMLAnchorElement)) return;
+
+    const targetId = anchorTargetId(link.getAttribute("href") ?? "");
+    if (!targetId) return;
+
+    event.preventDefault();
+    if (scrollToAnchor(targetId, "smooth")) return;
+
+    const nextChapter = findAnchorChapter(getAnchorIndex(), targetId);
+    if (nextChapter === null) return;
+    if (nextChapter === chapterIndex) {
+      scrollRef.current?.scrollTo({ top: 0 });
+      return;
+    }
+
+    // 장 제목 자체를 가리키는 링크라면 그 장의 맨 위에서 시작한다.
+    const headSlug = slugify(book.chapters[nextChapter].title);
+    pendingAnchorRef.current = slugify(targetId) === headSlug ? null : targetId;
+    selectChapter(nextChapter);
+  };
+
   useEffect(() => {
+    const anchor = pendingAnchorRef.current;
+    pendingAnchorRef.current = null;
+    // "auto" 는 CSS scroll-behavior(smooth)를 따라가므로 즉시 이동하도록 명시한다.
+    if (anchor && scrollToAnchor(anchor, "instant")) return;
     scrollRef.current?.scrollTo({ top: 0 });
   }, [chapterIndex]);
 
@@ -158,7 +215,10 @@ export default function BookReader({
               <p className="font-serif text-xs tracking-[0.22em] text-amber-700 uppercase">
                 Chapter {String(chapterIndex + 1).padStart(2, "0")}
               </p>
-              <h2 className="mt-4 font-serif text-3xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-4xl">
+              <h2
+                id={slugify(chapter.title)}
+                className="mt-4 scroll-mt-8 font-serif text-3xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-4xl"
+              >
                 {chapter.title}
               </h2>
             </header>
@@ -166,6 +226,7 @@ export default function BookReader({
             <article
               className="book-prose"
               style={{ fontSize: `${fontSize}px` }}
+              onClick={handleBodyClick}
               dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
 
